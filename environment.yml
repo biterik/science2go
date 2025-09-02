@@ -1,0 +1,20 @@
+# environment.yml - conda-forge only to avoid SSL issues
+name: science2go
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - pip
+  - ffmpeg
+  - pip:
+    - PyPDF2==3.0.1
+    - google-cloud-texttospeech==2.16.3
+    - google-generativeai==0.3.2
+    - pydub==0.25.1
+    - mutagen==1.47.0
+    - pyyaml==6.0.1
+    - python-dotenv==1.0.0
+    - requests==2.31.0
+    - platformdirs==4.0.0
+    - pytest==7.4.3

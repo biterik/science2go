@@ -1,0 +1,321 @@
+# Science2Go - Git Ignore File
+# Generated for https://github.com/biterik/science2go
+
+# ============================================================================
+# Python specific
+# ============================================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ============================================================================
+# Science2Go Application Specific
+# ============================================================================
+
+# API Keys and Secrets (CRITICAL - Never commit these!)
+.env
+*.key
+*_key.json
+service_account*.json
+google_credentials*.json
+api_keys/
+
+# User generated content
+output/audio/*
+!output/audio/.gitkeep
+output/projects/*
+!output/projects/.gitkeep
+output/temp/*
+!output/temp/.gitkeep
+
+# Keep document library structure but ignore large files
+output/document_library/*.pdf
+output/document_library/*.docx
+output/document_library/*.txt
+!output/document_library/.gitkeep
+!output/document_library/library_index.json
+
+# User data and preferences
+user_settings.json
+user_preferences.json
+
+# Processing artifacts
+*.processed
+*.cleaned
+processing_cache/
+*.tmp
+
+# Audio processing temporary files
+*.wav.tmp
+*.mp3.tmp
+audio_chunks/
+
+# ============================================================================
+# Development and Debug Files  
+# ============================================================================
+
+# Debug scripts (based on your current cleanup targets)
+debug_*.py
+test_*.py
+check_*.py
+fix_*.py
+*_diagnostic.py
+*_debug.py
+
+# Development notes and scratch files
+NOTES.md
+TODO.md
+scratch/
+dev_notes/
+
+# Backup files
+*.bak
+*.backup
+*.orig
+*~
+
+# ============================================================================
+# IDE and Editor files
+# ============================================================================
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json.example
+!.vscode/launch.json.example
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# Operating System files
+# ============================================================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================================================
+# Logs and Temporary files
+# ============================================================================
+
+# Application logs
+logs/
+*.log
+error.log
+debug.log
+application.log
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+.cache/
+
+# ============================================================================
+# Documentation build files
+# ============================================================================
+
+# Sphinx
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# MkDocs
+site/
+
+# ============================================================================
+# Packaging and Distribution
+# ============================================================================
+
+# Built application bundles
+Science2Go.app/
+Science2Go.exe
+dist/
+build/
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.tar.gz
+*.zip

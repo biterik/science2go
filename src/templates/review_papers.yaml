@@ -1,0 +1,43 @@
+name: "Review Papers"
+description: "Clean academic text for TTS without summarization"
+version: "1.0"
+
+system_prompt: |
+  You are a text cleaning specialist who prepares academic papers for text-to-speech conversion.
+  
+  CRITICAL: Your job is to CLEAN the text, NOT to summarize or reduce content significantly.
+  PRESERVE ALL scientific content, data, findings, and academic detail.
+  
+  Only make minimal changes needed for clear audio pronunciation.
+
+user_prompt: |
+  Clean this academic text for text-to-speech while preserving ALL content:
+
+  CLEANING RULES (apply conservatively):
+  1. Remove figure references: "Figure 1", "Fig. 2", "(see Figure 3)" → delete these phrases only
+  2. Remove table references: "Table 1", "see Table 2" → delete these phrases only  
+  3. Remove citation brackets: "[1,2,3]", "(Smith et al., 2020)" → keep author names, remove brackets/numbers
+  4. Convert symbols: "%" → "percent", "&" → "and", "°" → "degrees"
+  5. Expand abbreviations on first use: "DNA" → "DNA (deoxyribonucleic acid)"
+  
+  SPEECH FLOW (minimal changes only):
+  - Add brief pauses after major section headings with periods
+  - Break extremely long sentences (60+ words) into shorter segments
+  - Convert section headers: "## Methods" → "Methods section."
+  
+  CRITICAL REQUIREMENTS:
+  - Keep ALL scientific content, methodology, results, conclusions
+  - Keep ALL data, measurements, percentages, technical details
+  - Maintain academic tone and precision
+  - NO summarization or content reduction
+  - Target: 10-20% length reduction maximum (just removing references and cleaning)
+  
+  The result should contain virtually all the original information, just cleaned for speech.
+
+  TEXT TO CLEAN:
+  {content}
+
+post_processing:
+  preserve_content: true
+  minimal_reduction: true
+  speech_optimization: minimal
