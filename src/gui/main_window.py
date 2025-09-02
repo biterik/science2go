@@ -1,6 +1,6 @@
 """
-Science2Go Main Window - Updated with Podcast Description Generation
-Complete version with enhanced PDF metadata extraction and proper description generation
+Science2Go Main Window - Enhanced with Save/Load for AI-generated content
+Added functionality to save and load processed text to avoid re-generation
 """
 
 import tkinter as tk
@@ -8,7 +8,9 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 import platform
 import sys
 import threading
+import json
 from pathlib import Path
+from datetime import datetime
 
 # Import configuration and utilities
 current_dir = Path(__file__).parent
@@ -50,12 +52,16 @@ class Science2GoApp:
         self.pdf_metadata = {}
         self.markdown_content = ""
         self.processed_content = ""
+        self.current_processed_file = None  # Track loaded processed file
         
         # PDF extractor
         if PDF_METADATA_AVAILABLE:
             self.pdf_extractor = PDFMetadataExtractor()
         else:
             self.pdf_extractor = None
+        
+        # Ensure output directories exist
+        config.ensure_directories()
         
         print("✅ Science2Go GUI initialized successfully")
     
@@ -250,7 +256,7 @@ class Science2GoApp:
         self.description_text.pack(fill=tk.X)
     
     def create_markdown_processing_tab(self):
-        """Create the Markdown Processing tab with AI integration"""
+        """Create the Markdown Processing tab with AI integration and Save/Load functionality"""
         markdown_frame = ttk.Frame(self.notebook)
         self.notebook.add(markdown_frame, text="📝 Markdown Processing")
         
@@ -267,10 +273,23 @@ class Science2GoApp:
                                font=('Arial', 16, 'bold'))
         title_label.pack(side=tk.LEFT, anchor=tk.W)
         
-        # Buttons on the right
-        ttk.Button(title_and_buttons_frame, text="Process with AI", 
+        # Buttons on the right - ENHANCED with Save/Load
+        button_frame = ttk.Frame(title_and_buttons_frame)
+        button_frame.pack(side=tk.RIGHT)
+        
+        # File operations
+        ttk.Button(button_frame, text="Load Processed", 
+                  command=self.load_processed_text).pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(button_frame, text="Save Processed", 
+                  command=self.save_processed_text).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Separator
+        ttk.Separator(button_frame, orient='vertical').pack(side=tk.RIGHT, fill='y', padx=5)
+        
+        # Processing operations
+        ttk.Button(button_frame, text="Process with AI", 
                   command=self.process_markdown_ai).pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(title_and_buttons_frame, text="Clear Content", 
+        ttk.Button(button_frame, text="Clear Content", 
                   command=self.clear_markdown_content).pack(side=tk.RIGHT)
         
         # Markdown File Input Section
@@ -341,7 +360,7 @@ class Science2GoApp:
                                                       font=('Consolas', 10))
         self.processed_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Statistics Section
+        # Statistics and File Info Section
         stats_section = ttk.Frame(container)
         stats_section.pack(fill=tk.X)
         
@@ -349,6 +368,12 @@ class Science2GoApp:
         self.content_stats_var = tk.StringVar(value="No content loaded")
         stats_label = ttk.Label(stats_section, textvariable=self.content_stats_var)
         stats_label.pack(side=tk.LEFT)
+        
+        # File info
+        self.file_info_var = tk.StringVar(value="")
+        file_info_label = ttk.Label(stats_section, textvariable=self.file_info_var, 
+                                   font=('Arial', 9, 'italic'))
+        file_info_label.pack(side=tk.LEFT, padx=(20, 0))
         
         # Processing status
         self.processing_status_var = tk.StringVar(value="Ready")
@@ -430,7 +455,7 @@ class Science2GoApp:
         self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, length=200)
         self.progress_bar.pack(side=tk.RIGHT, padx=(10, 0))
     
-    # Paper Setup Tab Methods
+    # Paper Setup Tab Methods (unchanged)
     def browse_pdf(self):
         """Browse for PDF file"""
         file_path = filedialog.askopenfilename(
@@ -450,7 +475,7 @@ class Science2GoApp:
             return
         
         # Disable button during analysis
-        self.analyze_btn.config(state="disabled", text="🔄 Analyzing...")
+        self.analyze_btn.config(state="disabled", text="📄 Analyzing...")
         self.status_var.set("Analyzing PDF...")
         self.progress_bar.config(mode='indeterminate')
         self.progress_bar.start()
@@ -584,7 +609,7 @@ class Science2GoApp:
         
         self.status_var.set("Podcast description generated")
     
-    # Markdown Processing Tab Methods
+    # ENHANCED Markdown Processing Tab Methods with Save/Load
     def browse_markdown_file(self):
         """Browse for markdown file"""
         file_path = filedialog.askopenfilename(
@@ -607,13 +632,190 @@ class Science2GoApp:
             self.source_text.insert(1.0, content)
             self.source_text.config(state="disabled")
             
-            # Update statistics
+            # Update statistics and file info
             self.update_content_statistics()
+            self.update_file_info()
             
             self.status_var.set(f"Loaded: {Path(file_path).name}")
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load markdown file:\n{str(e)}")
+    
+    def save_processed_text(self):
+        """Save AI-processed text to file"""
+        processed_content = self.processed_text.get(1.0, tk.END).strip()
+        if not processed_content:
+            messagebox.showwarning("No Content", "No processed content to save.")
+            return
+        
+        # Generate default filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        template = self.template_var.get().replace(" ", "_").lower()
+        default_filename = f"processed_{template}_{timestamp}.md"
+        
+        # Get save location
+        file_path = filedialog.asksaveasfilename(
+            title="Save Processed Text",
+            defaultextension=".md",
+            initialfile=default_filename,
+            initialdir=config.projects_dir,
+            filetypes=[
+                ("Markdown files", "*.md"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # Prepare metadata for the processed file
+            metadata = {
+                "generated_at": datetime.now().isoformat(),
+                "template_used": self.template_var.get(),
+                "source_file": self.markdown_path_var.get(),
+                "processing_stats": self.get_processing_stats(),
+                "paper_info": {
+                    "title": self.title_text.get(1.0, tk.END).strip() if hasattr(self, 'title_text') else "",
+                    "authors": self.authors_var.get() if hasattr(self, 'authors_var') else "",
+                    "journal": self.journal_var.get() if hasattr(self, 'journal_var') else "",
+                    "year": self.year_var.get() if hasattr(self, 'year_var') else "",
+                    "doi": self.doi_var.get() if hasattr(self, 'doi_var') else ""
+                }
+            }
+            
+            # Create the content with metadata header
+            content_with_metadata = f"""<!--
+Science2Go Processed Content
+{json.dumps(metadata, indent=2)}
+-->
+
+{processed_content}"""
+            
+            # Save the file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content_with_metadata)
+            
+            # Update current file tracking
+            self.current_processed_file = file_path
+            self.update_file_info()
+            
+            self.status_var.set(f"Processed content saved: {Path(file_path).name}")
+            messagebox.showinfo("Saved", f"Processed content saved to:\n{file_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save processed content:\n{str(e)}")
+    
+    def load_processed_text(self):
+        """Load previously saved processed text"""
+        file_path = filedialog.askopenfilename(
+            title="Load Processed Text",
+            initialdir=config.projects_dir,
+            filetypes=[
+                ("Markdown files", "*.md"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Try to extract metadata if present
+            metadata = None
+            processed_content = content
+            
+            if content.startswith('<!--\nScience2Go Processed Content\n'):
+                try:
+                    # Extract metadata from comment
+                    metadata_end = content.find('-->')
+                    if metadata_end != -1:
+                        metadata_section = content[content.find('{\n'):metadata_end]
+                        metadata = json.loads(metadata_section)
+                        processed_content = content[metadata_end + 3:].strip()
+                except (json.JSONDecodeError, ValueError):
+                    # If metadata parsing fails, just use the whole content
+                    pass
+            
+            # Load content into processed text area
+            self.processed_text.delete(1.0, tk.END)
+            self.processed_text.insert(1.0, processed_content)
+            
+            # Switch to processed tab
+            self.content_notebook.select(1)
+            
+            # Update template if metadata available
+            if metadata and metadata.get('template_used'):
+                template_used = metadata['template_used']
+                if template_used in ["Review Papers", "Technical Papers", "Custom Template"]:
+                    self.template_var.set(template_used)
+                    self.update_template_description()
+            
+            # Track current file
+            self.current_processed_file = file_path
+            
+            # Update statistics and file info
+            self.update_content_statistics()
+            self.update_file_info()
+            
+            # Update status
+            self.processing_status_var.set("✅ Loaded from file")
+            self.status_var.set(f"Processed content loaded: {Path(file_path).name}")
+            
+            # Show info about loaded content
+            info_msg = f"Loaded processed content from:\n{Path(file_path).name}"
+            if metadata:
+                if metadata.get('generated_at'):
+                    info_msg += f"\n\nGenerated: {metadata['generated_at'][:16]}"
+                if metadata.get('template_used'):
+                    info_msg += f"\nTemplate: {metadata['template_used']}"
+                if metadata.get('paper_info', {}).get('title'):
+                    title = metadata['paper_info']['title'][:50]
+                    info_msg += f"\nPaper: {title}{'...' if len(metadata['paper_info']['title']) > 50 else ''}"
+            
+            messagebox.showinfo("Loaded", info_msg)
+            
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to load processed content:\n{str(e)}")
+    
+    def get_processing_stats(self):
+        """Get current processing statistics"""
+        source_content = self.source_text.get(1.0, tk.END).strip()
+        processed_content = self.processed_text.get(1.0, tk.END).strip()
+        
+        stats = {
+            "source_words": len(source_content.split()) if source_content else 0,
+            "source_chars": len(source_content),
+            "processed_words": len(processed_content.split()) if processed_content else 0,
+            "processed_chars": len(processed_content)
+        }
+        
+        if source_content and processed_content:
+            stats["reduction_percentage"] = ((stats["source_chars"] - stats["processed_chars"]) / stats["source_chars"]) * 100
+        
+        return stats
+    
+    def update_file_info(self):
+        """Update file information display"""
+        info_parts = []
+        
+        # Current processed file info
+        if self.current_processed_file:
+            filename = Path(self.current_processed_file).name
+            info_parts.append(f"Processed file: {filename}")
+        
+        # Source file info
+        source_file = self.markdown_path_var.get()
+        if source_file:
+            filename = Path(source_file).name
+            info_parts.append(f"Source: {filename}")
+        
+        self.file_info_var.set(" | ".join(info_parts))
     
     def on_template_changed(self, event=None):
         """Handle template selection change"""
@@ -649,6 +851,9 @@ class Science2GoApp:
                                      f"Content is quite large ({len(source_content):,} chars). "
                                      "This may take several minutes to process. Continue?"):
                 return
+        
+        # Clear current processed file tracking since we're generating new content
+        self.current_processed_file = None
         
         # Start processing
         self.processing_status_var.set("🔄 Processing with Gemini AI...")
@@ -691,6 +896,7 @@ class Science2GoApp:
                 
                 # Update statistics
                 self.update_content_statistics()
+                self.update_file_info()
                 
                 # Update status
                 processing_time = result.get('processing_time', 0)
@@ -704,7 +910,8 @@ class Science2GoApp:
                                   f"Content processed successfully!\n\n"
                                   f"Processing time: {processing_time:.1f} seconds\n"
                                   f"Content reduction: {reduction:.1f}%\n"
-                                  f"You can now review and edit the processed content.")
+                                  f"You can now review and edit the processed content.\n\n"
+                                  f"💡 Tip: Use 'Save Processed' to save this content for later use.")
                 
             else:
                 error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
@@ -733,11 +940,13 @@ class Science2GoApp:
         # Clear processed content
         self.processed_text.delete(1.0, tk.END)
         
-        # Clear file path
+        # Clear file paths and tracking
         self.markdown_path_var.set("")
+        self.current_processed_file = None
         
-        # Reset statistics
+        # Reset statistics and file info
         self.content_stats_var.set("No content loaded")
+        self.file_info_var.set("")
         self.processing_status_var.set("Ready")
         
         # Switch back to source tab
@@ -768,7 +977,7 @@ class Science2GoApp:
         
         self.content_stats_var.set(stats_text)
     
-    # Menu handlers
+    # Menu handlers (unchanged)
     def new_project(self):
         """Create new project"""
         self.status_var.set("New project created")
