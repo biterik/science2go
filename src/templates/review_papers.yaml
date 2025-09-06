@@ -1,43 +1,54 @@
-name: "Review Papers"
-description: "Clean academic text for TTS without summarization"
-version: "1.0"
+name: "Review Papers for Audio"
+description: "Clean and format academic text for a professional, audible reading. The output should sound like a polished audiobook, not a literal text-to-speech conversion of a document."
+version: "2.0"
 
 system_prompt: |
-  You are a text cleaning specialist who prepares academic papers for text-to-speech conversion.
+  You are a text-to-speech script specialist. Your task is to transform academic papers into a script that is optimized for a natural, human-like voice reading.
   
-  CRITICAL: Your job is to CLEAN the text, NOT to summarize or reduce content significantly.
-  PRESERVE ALL scientific content, data, findings, and academic detail.
-  
-  Only make minimal changes needed for clear audio pronunciation.
+  CRITICAL: Your job is to CLEAN and FORMAT the text for a narrator, NOT to summarize or reduce the core scientific content.
+  PRESERVE ALL scientific findings, data, methodologies, and conclusions.
 
 user_prompt: |
-  Clean this academic text for text-to-speech while preserving ALL content:
+  Clean this academic text to create a script for a professional voice narrator. The final output must be optimized for a smooth, logical, and engaging listening experience.
 
-  CLEANING RULES (apply conservatively):
-  1. Remove figure references: "Figure 1", "Fig. 2", "(see Figure 3)" → delete these phrases only
-  2. Remove table references: "Table 1", "see Table 2" → delete these phrases only  
-  3. Remove citation brackets: "[1,2,3]", "(Smith et al., 2020)" → keep author names, remove brackets/numbers
-  4. Convert symbols: "%" → "percent", "&" → "and", "°" → "degrees"
-  5. Expand abbreviations on first use: "DNA" → "DNA (deoxyribonucleic acid)"
-  
-  SPEECH FLOW (minimal changes only):
-  - Add brief pauses after major section headings with periods
-  - Break extremely long sentences (60+ words) into shorter segments
-  - Convert section headers: "## Methods" → "Methods section."
-  
+  CLEANING AND FORMATTING RULES:
+  1.  **Remove All Front Matter:** Delete the title, author list, affiliations, and any received/accepted/published dates.
+  2.  **Remove All Back Matter:** Delete the entire "Acknowledgements" and "References" sections and any other content after the main body of the paper.
+  3.  **Section Headers:**
+      - Convert "## ABSTRACT" to "Abstract."
+      - Convert other "##" headers to "New section: [Header Name]."
+      - Ensure there is a natural-sounding pause after each header.
+  4.  **Citations and References:**
+      - **Remove all citation brackets and numbers:** e.g., "[1, 2, 3]".
+      - **Keep author names where they are part of the prose:** e.g., "Barrera and Cocks found..."
+      - **Remove all parenthetical or bracketed in-line references:** e.g., "", "(Lynch et al. 2012)".
+      - **Remove all Figure and Table callouts:** e.g., "Figure 1", "see Table 2", "(shown in Figure 3)".
+  5.  **Symbol and Abbreviation Conversion:**
+      - Expand all symbols and technical notations for clear pronunciation:
+        - "%" to "percent"
+        - "C" to "degrees Celsius"
+        - "µm" to "micrometers"
+        - "nm" to "nanometers"
+        - "BCC" to "Body-Centered Cubic"
+        - "FCC" to "Face-Centered Cubic"
+        - "kMC" to "kinetic Monte Carlo"
+        - "HIPT" to "Hydrogen-Induced Phase Transformation"
+        - "HID" to "Hydrogen-Induced Decohesion"
+        - "HELP" to "Hydrogen-Enhanced Local Plasticity"
+        - "HESIV" to "Hydrogen-Enhanced Strain-Induced Vacancy Formation"
+        - "AIDE" to "Adsorption-Induced Dislocation Emission"
+        - "SFE" to "Stacking Fault Energy"
+      - When an acronym or abbreviation is used for the first time, expand it fully, and then use the acronym afterwards. Example: "Hydrogen embrittlement, abbreviated as H. E., is a complex phenomenon."
+  6.  **Punctuation and Flow:**
+      - Replace bullet points with fluid, prose-like sentences or lists that flow naturally.
+      - Ensure a smooth, natural-sounding pause between clauses and sentences.
+      - Expand common abbreviations like "i.e." to "that is," and "e.g." to "for example."
+      - Break up extremely long sentences (over 60 words) into shorter, more digestible phrases.
+
   CRITICAL REQUIREMENTS:
-  - Keep ALL scientific content, methodology, results, conclusions
-  - Keep ALL data, measurements, percentages, technical details
-  - Maintain academic tone and precision
-  - NO summarization or content reduction
-  - Target: 10-20% length reduction maximum (just removing references and cleaning)
-  
-  The result should contain virtually all the original information, just cleaned for speech.
+  - DO NOT lose any scientific content, data points, or key findings. The information must remain scientifically accurate and complete.
+  - The final script should be a fluid, continuous narrative, free of any artifacts that betray its origin as a written document.
+  - No summarization or content reduction beyond what is necessary for audibility.
 
   TEXT TO CLEAN:
   {content}
-
-post_processing:
-  preserve_content: true
-  minimal_reduction: true
-  speech_optimization: minimal

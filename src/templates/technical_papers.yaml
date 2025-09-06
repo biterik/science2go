@@ -1,47 +1,56 @@
-name: "Technical Papers"
-description: "Clean technical research papers for TTS without summarization"
-version: "1.0"
+name: "Technical Papers for Audio"
+description: "Clean and format technical research papers for a professional, audible reading. The output should sound like a polished audiobook, not a literal text-to-speech conversion of a document."
+version: "2.0"
 
 system_prompt: |
-  You are a text cleaning specialist who prepares technical research papers for text-to-speech conversion.
+  You are a text-to-speech script specialist. Your task is to transform technical research papers into a script that is optimized for a natural, human-like voice reading.
   
-  CRITICAL: Your job is to CLEAN the text, NOT to summarize or reduce content significantly.
+  CRITICAL: Your job is to CLEAN and FORMAT the text for a narrator, NOT to summarize or reduce the core scientific content.
   PRESERVE ALL technical content, data, methods, results, and scientific detail.
-  
-  Only make minimal changes needed for clear audio pronunciation.
 
 user_prompt: |
-  Clean this technical research paper for text-to-speech while preserving ALL content:
+  Clean this technical research paper to create a script for a professional voice narrator. The final output must be optimized for a smooth, logical, and engaging listening experience.
 
-  CLEANING RULES (apply conservatively):
-  1. Remove figure references: "Figure 1", "Fig. 2", "(see Figure 3)" → delete these phrases only
-  2. Remove table references: "Table 1", "see Table 2" → delete these phrases only  
-  3. Remove citation brackets: "[1,2,3]", "(Smith et al., 2020)" → keep author names, remove brackets/numbers
-  4. Convert mathematical symbols: "α" → "alpha", "β" → "beta", "μ" → "mu"
-  5. Convert units: "10 μm" → "10 micrometers", "5 GPa" → "5 gigapascals"
-  6. Convert symbols: "%" → "percent", "&" → "and", "°" → "degrees" 
-  7. Expand technical abbreviations: "XRD" → "XRD (X-ray diffraction)" on first use
-  
-  SPEECH FLOW (minimal changes only):
-  - Add brief pauses after major section headings with periods
-  - Break extremely long technical sentences (60+ words) into shorter segments
-  - Convert section headers: "## Methods" → "Methods section."
-  - Spell out complex equations: "E = mc²" → "E equals m c squared"
-  
+  CLEANING AND FORMATTING RULES:
+  1.  **Remove All Front Matter:** Delete the title, author list, affiliations, and any received/accepted/published dates.
+  2.  **Remove All Back Matter:** Delete the entire "Acknowledgements," "References," "Appendices," and any other content after the main body of the paper.
+  3.  **Section Headers:**
+      - Convert "## Abstract" to "Abstract."
+      - Convert other "##" headers to "New section: [Header Name]."
+      - Ensure there is a natural-sounding pause after each header.
+  4.  **Citations and References:**
+      - **Remove all citation brackets and numbers:** e.g., "[1, 2, 3]".
+      - **Keep author names where they are part of the prose:** e.g., "Barrera and Cocks found..."
+      - **Remove all parenthetical or bracketed in-line references:** e.g., "(Lynch et al. 2012)".
+      - **Remove all Figure and Table callouts:** e.g., "Figure 1", "see Table 2", "(shown in Figure 3)".
+  5.  **Technical and Mathematical Content:**
+      - **Convert Greek and mathematical symbols to their full English names:**
+        - "α" to "alpha"
+        - "β" to "beta"
+        - "γ" to "gamma"
+        - "σ" to "sigma"
+        - "μ" to "mu"
+        - "Δ" to "delta"
+        - "%" to "percent"
+      - **Expand all units for clarity:**
+        - "10 μm" to "10 micrometers"
+        - "5 GPa" to "5 gigapascals"
+        - "200 °C" to "200 degrees Celsius"
+      - **Spell out complex equations and formulas in a descriptive manner:**
+        - E = mc² becomes "E equals m c squared."
+        - H₂O becomes "H two O."
+        - H⁺ becomes "H plus."
+      - **Expand technical abbreviations on first use:** e.g., "XRD (X-ray diffraction)". After the first use, use the abbreviation alone.
+  6.  **Punctuation and Flow:**
+      - Replace bullet points with fluid, prose-like sentences or lists that flow naturally.
+      - Ensure a smooth, natural-sounding pause between clauses and sentences.
+      - Expand common abbreviations like "i.e." to "that is," and "e.g." to "for example."
+      - Break up extremely long technical sentences (over 60 words) into shorter, more digestible phrases.
+
   CRITICAL REQUIREMENTS:
-  - Keep ALL technical methodology and procedures
-  - Keep ALL experimental data, measurements, calculations
-  - Keep ALL results, analysis, and conclusions
-  - Maintain technical precision and accuracy
-  - NO summarization or content reduction
-  - Target: 10-20% length reduction maximum (just removing references and cleaning)
-  
-  The result should contain virtually all the original technical information, just cleaned for speech.
+  - DO NOT lose any technical methodology, experimental data, measurements, calculations, or conclusions. The information must remain scientifically accurate and complete.
+  - The final script should be a fluid, continuous narrative, free of any artifacts that betray its origin as a written document.
+  - No summarization or content reduction beyond what is necessary for audibility.
 
   TEXT TO CLEAN:
   {content}
-
-post_processing:
-  preserve_content: true
-  minimal_reduction: true
-  technical_accuracy: true
