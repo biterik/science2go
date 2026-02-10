@@ -1,8 +1,8 @@
 # Science2Go
 
-**Convert Academic Papers into Podcast-Style Audio**
+**Turn Academic Papers into Audio Papers**
 
-Science2Go transforms scientific PDF papers into high-quality audio files using AI text processing and Google Cloud Text-to-Speech. The pipeline extracts text from PDFs, cleans it for spoken delivery with Gemini AI, and synthesizes natural-sounding speech with Chirp 3 HD voices.
+Science2Go converts scientific PDF papers into high-quality audio files you can listen to on the go. The pipeline extracts text from PDFs, uses Gemini AI to clean it for spoken delivery, and synthesizes natural-sounding speech with Google Cloud Chirp 3 HD voices.
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -29,42 +29,102 @@ PDF  -->  Markdown  -->  AI Cleanup  -->  TTS  -->  MP3 / M4B
 
 ---
 
-## Quick Start
+## Prerequisites
 
-### 1. Clone and set up the environment
+Before installing Science2Go, you need accounts and API keys for two Google services:
+
+### 1. Google AI Studio (for Gemini text processing)
+
+1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click **Create API Key**
+4. Copy the key (starts with `AIza...`)
+
+This is free tier and sufficient for processing papers.
+
+### 2. Google Cloud (for Text-to-Speech)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a Google Cloud account if you don't have one (free tier includes 1 million TTS characters/month for WaveNet, 4 million for standard voices; Chirp 3 HD pricing may differ -- check [Cloud TTS pricing](https://cloud.google.com/text-to-speech/pricing))
+3. Create a new project (e.g., "science2go-tts")
+4. Enable the **Cloud Text-to-Speech API**:
+   - Go to **APIs & Services** > **Library**
+   - Search for "Text-to-Speech"
+   - Click **Enable**
+5. Set up authentication (choose one):
+   - **Option A (recommended):** Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) and run:
+     ```bash
+     gcloud auth application-default login
+     ```
+     This opens a browser to authenticate and stores credentials locally.
+   - **Option B:** Create a service account key:
+     - Go to **IAM & Admin** > **Service Accounts**
+     - Create a service account, grant it the "Cloud Text-to-Speech User" role
+     - Create a JSON key and download it
+     - Set the path: `export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"`
+   - **Option C:** Create an API key:
+     - Go to **APIs & Services** > **Credentials**
+     - Click **Create Credentials** > **API Key**
+     - Set: `export GOOGLE_API_KEY="your_key"`
+
+### 3. System requirements
+
+- **Python 3.11+**
+- **Conda** (miniforge or miniconda recommended) or pip
+- **ffmpeg** (for audio processing -- install via `brew install ffmpeg` on macOS, or `conda install ffmpeg`)
+
+---
+
+## Installation
 
 ```bash
+# Clone the repository
 git clone https://github.com/biterik/science2go.git
 cd science2go
 
-# Create conda environment (recommended)
+# Create conda environment (installs all dependencies)
 conda env create -f environment.yml
 conda activate science2go
 
-# Optional: enable PDF-to-Markdown (pulls in PyTorch ~2GB)
+# Optional: enable PDF-to-Markdown conversion (pulls in PyTorch ~2GB)
 pip install marker-pdf pdftext
 ```
 
-### 2. Configure API keys
+### Configure API keys
+
+Add your keys to your shell profile (`~/.zshrc` on macOS, `~/.bashrc` on Linux):
 
 ```bash
-# Add to ~/.zshrc or ~/.bashrc:
-export GEMINI_API_KEY="your_gemini_api_key"
-export GOOGLE_API_KEY="your_google_api_key"
+# Required: Gemini AI for text processing
+export GEMINI_API_KEY="your_gemini_api_key_here"
 
-source ~/.zshrc
+# For TTS (if not using gcloud auth application-default login):
+export GOOGLE_API_KEY="your_google_api_key_here"
 ```
 
-**Get your keys:**
-- Gemini API Key: [Google AI Studio](https://aistudio.google.com/app/apikey)
-- Google Cloud TTS: [Console](https://console.cloud.google.com/apis/credentials) or run `gcloud auth application-default login`
+Then reload: `source ~/.zshrc`
 
-### 3. Run
+### Run
 
 ```bash
 ./run.sh
 # or: python main.py
 ```
+
+---
+
+## Copyright Notice
+
+**Only use Science2Go with papers you have the right to convert.**
+
+This tool is intended for:
+- Open Access papers published under Creative Commons or similar permissive licenses
+- Your own manuscripts and pre-prints
+- Papers where you have explicit permission from the copyright holder
+
+Many academic papers are protected by publisher copyright. Converting a copyrighted paper to audio without permission may constitute copyright infringement, even for personal use. Always check the paper's license before processing it.
+
+When generating an audio paper, Science2Go automatically includes an attribution note referencing the original paper, authors, DOI, and license information.
 
 ---
 
@@ -118,6 +178,39 @@ Four-tab CustomTkinter interface:
 
 ---
 
+## Listening to Audio Papers
+
+### iPhone / iPad
+
+**Recommended: [BookPlayer](https://apps.apple.com/app/bookplayer/id1138219998)** (free, open source)
+
+1. Export your `.mp3` or `.m4b` file to iCloud Drive (or any cloud storage)
+2. On your iPhone, open the **Files** app
+3. Navigate to the file and tap it
+4. Choose **Open in BookPlayer** (or use the share sheet)
+
+BookPlayer supports chapter navigation (M4B), playback speed control, and remembers your position.
+
+Alternatively, you can use Apple's built-in **Books** app (supports M4B audiobooks) or import MP3 files into the **Music** app via iTunes/Finder sync.
+
+### Android
+
+**Recommended: [Voice Audiobook Player](https://play.google.com/store/apps/details?id=de.ph1b.audiobook)** (free, open source)
+
+1. Transfer your `.mp3` or `.m4b` file to your phone (USB, Google Drive, or any cloud storage)
+2. Place it in a folder on your device (e.g., `Audiobooks/`)
+3. Open Voice and point it to that folder
+
+Other good options:
+- [Smart AudioBook Player](https://play.google.com/store/apps/details?id=ak.alizandro.smartaudiobookplayer) - feature-rich, supports chapters
+- Any music player for MP3 files (e.g., VLC, Musicolet)
+
+### Desktop
+
+Any media player works: VLC, IINA (macOS), foobar2000 (Windows), or just double-click the file.
+
+---
+
 ## Project Structure
 
 ```
@@ -147,7 +240,7 @@ science2go/
       template_manager.py          # YAML template loader
 
   output/                          # Generated content (git-ignored)
-    audio/                         # Podcast MP3/M4B files
+    audio/                         # Audio paper files
     projects/                      # Saved text files
     temp/                          # Processing temp files
 ```
@@ -179,7 +272,7 @@ Note: Chirp 3 HD does **not** support pitch control or SSML prosody tags. Use `s
 | `GOOGLE_API_KEY` | For TTS | Google Cloud TTS synthesis |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Alt. TTS | Service account JSON path |
 
-If neither `GOOGLE_API_KEY` nor `GOOGLE_APPLICATION_CREDENTIALS` is set, the app checks for Application Default Credentials (`~/.config/gcloud/application_default_credentials.json` from `gcloud auth application-default login`).
+If none of the Google TTS variables are set, the app checks for Application Default Credentials (`~/.config/gcloud/application_default_credentials.json` from `gcloud auth application-default login`).
 
 ---
 

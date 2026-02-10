@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Science2Go - Academic Paper to Podcast Converter
+Science2Go - Turn Academic Papers into Audio Papers
 Main application entry point
 """
 

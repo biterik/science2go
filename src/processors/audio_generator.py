@@ -343,7 +343,7 @@ class AudioGenerator:
         Args:
             text: The full text to convert to speech.
             output_path: Output file path (.mp3, .wav, .ogg, or .m4b).
-            title: Podcast/paper title for metadata.
+            title: Paper title for metadata.
             author: Author name for metadata.
             description: Description text for metadata.
             progress_callback: Callback(message, progress_fraction).
@@ -594,11 +594,11 @@ class AudioGenerator:
         if audio.tags is None:
             audio.add_tags()
 
-        audio.tags.add(TIT2(encoding=3, text=title or "Science2Go Podcast"))
+        audio.tags.add(TIT2(encoding=3, text=title or "Science2Go Audio Paper"))
         audio.tags.add(TPE1(encoding=3, text=author or "Science2Go"))
         audio.tags.add(TALB(encoding=3, text="Science2Go"))
         audio.tags.add(TDRC(encoding=3, text=str(datetime.now().year)))
-        audio.tags.add(TCON(encoding=3, text="Podcast"))
+        audio.tags.add(TCON(encoding=3, text="Science"))
         audio.tags.add(TPUB(encoding=3, text="Science2Go"))
 
         if description:
@@ -643,11 +643,11 @@ class AudioGenerator:
         """Add MP4/M4B metadata tags. Chapter markers via ffmpeg if available."""
         try:
             audio = MP4(file_path)
-            audio["\xa9nam"] = title or "Science2Go Podcast"
+            audio["\xa9nam"] = title or "Science2Go Audio Paper"
             audio["\xa9ART"] = author or "Science2Go"
             audio["\xa9alb"] = "Science2Go"
             audio["\xa9day"] = str(datetime.now().year)
-            audio["\xa9gen"] = "Podcast"
+            audio["\xa9gen"] = "Science"
             if description:
                 audio["\xa9cmt"] = description
 

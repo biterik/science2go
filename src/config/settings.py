@@ -156,7 +156,7 @@ class Config:
         return float(os.getenv('DEFAULT_VOLUME_GAIN', '0.0'))
     
     # =============================================================================
-    # Podcast Output Settings
+    # Audio Output Settings
     # =============================================================================
     
     @property
@@ -171,7 +171,7 @@ class Config:
     
     @property
     def normalize_audio(self) -> bool:
-        """Normalize audio for podcasts"""
+        """Normalize audio output"""
         return os.getenv('NORMALIZE_AUDIO', 'True').lower() == 'true'
     
     @property

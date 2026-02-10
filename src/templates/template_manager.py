@@ -77,7 +77,7 @@ class TemplateManager:
                 'name': name,
                 'description': 'Default review paper template',
                 'system_prompt': 'You are an expert at converting academic review papers into audio-friendly format.',
-                'user_prompt': 'Convert this academic text to podcast format. Remove figures, tables, citations. Add natural transitions.\n\nTEXT TO CONVERT:\n{content}',
+                'user_prompt': 'Convert this academic text to audio-friendly format. Remove figures, tables, citations. Add natural transitions.\n\nTEXT TO CONVERT:\n{content}',
                 'post_processing': {
                     'add_section_markers': True,
                     'natural_transitions': True,
@@ -89,7 +89,7 @@ class TemplateManager:
                 'name': name,
                 'description': 'Default technical paper template',
                 'system_prompt': 'You are an expert at converting technical research papers into audio-friendly format.',
-                'user_prompt': 'Convert this technical paper to podcast format. Explain complex concepts clearly. Remove figures, tables, citations.\n\nTEXT TO CONVERT:\n{content}',
+                'user_prompt': 'Convert this technical paper to audio-friendly format. Explain complex concepts clearly. Remove figures, tables, citations.\n\nTEXT TO CONVERT:\n{content}',
                 'post_processing': {
                     'add_section_markers': True,
                     'technical_explanations': True,
