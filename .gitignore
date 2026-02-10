@@ -198,3 +198,19 @@ local_config.py
 !output/audio/.gitkeep
 !output/temp/.gitkeep
 !output/projects/.gitkeep
+
+# Old snapshots and archives
+Version-*/
+science2go-main/
+science2go-main.tar
+science2go-src.zip
+*.tar
+*.zip
+
+# Patch files
+*.patch
+
+# Old working files
+.env.s
+.gitignore.txt
+requirements_txt.txt

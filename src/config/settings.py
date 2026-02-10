@@ -35,28 +35,58 @@ class Config:
     
     def validate_configuration(self):
         """Validate that required API keys are available"""
-        errors = []
-        
+        self.config_warnings = []
+        self.config_valid = True
+
         # Check for Gemini API key
         if not self.gemini_api_key:
-            errors.append("GEMINI_API_KEY not found")
-        
-        # Check for Google Cloud credentials (either service account or API key)
-        if not (self.google_credentials_path or self.google_api_key):
-            errors.append("Either GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_API_KEY required")
-        
-        if errors:
-            print("❌ Configuration errors found:")
-            for error in errors:
-                print(f"   - {error}")
+            self.config_warnings.append("GEMINI_API_KEY not found (needed for AI text processing)")
+
+        # Check for Google Cloud credentials (either service account, API key, or ADC)
+        has_google_auth = (
+            self.google_credentials_path
+            or self.google_api_key
+            or self._has_adc()
+        )
+        if not has_google_auth:
+            self.config_warnings.append(
+                "No Google Cloud auth found (needed for TTS). "
+                "Run: gcloud auth application-default login"
+            )
+
+        # If GOOGLE_APPLICATION_CREDENTIALS points to a missing file,
+        # unset it so Google SDKs fall back to ADC
+        if self.google_credentials_path and not Path(self.google_credentials_path).exists():
+            print(f"Note: GOOGLE_APPLICATION_CREDENTIALS file not found: "
+                  f"{self.google_credentials_path}")
+            print("  Unsetting it to use Application Default Credentials instead.")
+            os.environ.pop('GOOGLE_APPLICATION_CREDENTIALS', None)
+            # Re-check auth now that we cleared the bad path
+            has_google_auth = self.google_api_key or self._has_adc()
+            if not has_google_auth:
+                self.config_warnings.append(
+                    "No Google Cloud auth found (needed for TTS). "
+                    "Run: gcloud auth application-default login"
+                )
+
+        if self.config_warnings:
+            self.config_valid = False
+            print("Warning: Configuration issues found:")
+            for warning in self.config_warnings:
+                print(f"   - {warning}")
             print("\nSetup instructions:")
             print("1. Add to ~/.zshrc: export GEMINI_API_KEY='your_key'")
-            print("2. Add to ~/.zshrc: export GOOGLE_APPLICATION_CREDENTIALS='/path/to/service-account.json'")
+            print("2. For TTS: gcloud auth application-default login")
             print("   OR: export GOOGLE_API_KEY='your_key'")
             print("3. Run: source ~/.zshrc")
-            sys.exit(1)
-        
-        print("✅ Configuration validated successfully")
+            print("\nThe application will start but some features may be unavailable.")
+        else:
+            print("Configuration validated successfully")
+
+    def _has_adc(self) -> bool:
+        """Check if Application Default Credentials file exists"""
+        adc_path = Path.home() / '.config' / 'gcloud' / 'application_default_credentials.json'
+        return adc_path.exists()
     
     # =============================================================================
     # API Keys (your existing shell variables)

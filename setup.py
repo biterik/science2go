@@ -166,7 +166,8 @@ class Science2GoSetup:
                 'pydub',
                 'mutagen',
                 'yaml',
-                'dotenv'
+                'dotenv',
+                'customtkinter',
             ]
             
             for module in test_imports:

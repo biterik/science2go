@@ -1,0 +1,737 @@
+"""
+Science2Go Audio Generator
+Google Cloud TTS wrapper with Chirp 3 HD support, text chunking,
+audio concatenation (pydub), normalization, and MP3/M4B metadata (mutagen).
+"""
+
+import os
+import re
+import time
+import tempfile
+import struct
+from pathlib import Path
+from typing import Optional, List, Dict, Any, Callable
+from datetime import datetime
+
+# Google Cloud TTS
+try:
+    from google.cloud import texttospeech
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+    print("Warning: google-cloud-texttospeech not installed. "
+          "Install with: pip install google-cloud-texttospeech")
+
+# Audio processing
+try:
+    from pydub import AudioSegment
+    from pydub.effects import normalize as pydub_normalize
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+    print("Warning: pydub not installed. Install with: pip install pydub")
+
+# Metadata tagging
+try:
+    import mutagen
+    from mutagen.mp3 import MP3
+    from mutagen.id3 import (
+        ID3, TIT2, TPE1, TALB, TDRC, TCON, COMM, TPUB, CTOC, CHAP,
+        ID3NoHeaderError,
+    )
+    from mutagen.mp4 import MP4, MP4Cover
+    MUTAGEN_AVAILABLE = True
+except ImportError:
+    MUTAGEN_AVAILABLE = False
+    print("Warning: mutagen not installed. Install with: pip install mutagen")
+
+
+# ── Constants ──
+
+# TTS API limit: 5000 bytes per request (for ASCII English ~5000 chars)
+MAX_TTS_BYTES = 4800  # Leave margin for safety
+
+# Rate limit: 200 RPM for Chirp3 voices
+CHIRP3_RPM_LIMIT = 200
+MIN_REQUEST_INTERVAL = 60.0 / CHIRP3_RPM_LIMIT  # 0.3s between requests
+
+# Default voice
+DEFAULT_VOICE = "en-GB-Chirp3-HD-Charon"
+DEFAULT_LANGUAGE = "en-GB"
+DEFAULT_SPEAKING_RATE = 0.95
+DEFAULT_ENCODING = "MP3"
+
+# Audio format options
+AUDIO_FORMATS = ["MP3", "WAV", "OGG", "M4B"]
+BITRATE_OPTIONS = ["64k", "96k", "128k", "192k", "256k", "320k"]
+
+# Available Chirp 3 HD voices for en-GB (male)
+CHIRP3_HD_MALE_VOICES = [
+    "en-GB-Chirp3-HD-Achird",
+    "en-GB-Chirp3-HD-Algenib",
+    "en-GB-Chirp3-HD-Algieba",
+    "en-GB-Chirp3-HD-Alnilam",
+    "en-GB-Chirp3-HD-Charon",
+    "en-GB-Chirp3-HD-Enceladus",
+    "en-GB-Chirp3-HD-Fenrir",
+    "en-GB-Chirp3-HD-Iapetus",
+    "en-GB-Chirp3-HD-Orus",
+    "en-GB-Chirp3-HD-Puck",
+    "en-GB-Chirp3-HD-Rasalgethi",
+    "en-GB-Chirp3-HD-Sadachbia",
+    "en-GB-Chirp3-HD-Sadaltager",
+    "en-GB-Chirp3-HD-Schedar",
+    "en-GB-Chirp3-HD-Umbriel",
+    "en-GB-Chirp3-HD-Zubenelgenubi",
+]
+
+# Available Chirp 3 HD voices for en-GB (female)
+CHIRP3_HD_FEMALE_VOICES = [
+    "en-GB-Chirp3-HD-Achernar",
+    "en-GB-Chirp3-HD-Aoede",
+    "en-GB-Chirp3-HD-Autonoe",
+    "en-GB-Chirp3-HD-Callirrhoe",
+    "en-GB-Chirp3-HD-Despina",
+    "en-GB-Chirp3-HD-Erinome",
+    "en-GB-Chirp3-HD-Gacrux",
+    "en-GB-Chirp3-HD-Kore",
+    "en-GB-Chirp3-HD-Laomedeia",
+    "en-GB-Chirp3-HD-Leda",
+    "en-GB-Chirp3-HD-Pulcherrima",
+    "en-GB-Chirp3-HD-Sulafat",
+    "en-GB-Chirp3-HD-Vindemiatrix",
+    "en-GB-Chirp3-HD-Zephyr",
+]
+
+ALL_CHIRP3_HD_VOICES = CHIRP3_HD_MALE_VOICES + CHIRP3_HD_FEMALE_VOICES
+
+# Voice display names (strip the locale prefix for UI)
+def voice_display_name(full_name: str) -> str:
+    """Extract display name from full voice name, e.g. 'Charon' from 'en-GB-Chirp3-HD-Charon'."""
+    parts = full_name.split("-")
+    return parts[-1] if parts else full_name
+
+
+def voice_full_name(display_name: str, language: str = DEFAULT_LANGUAGE) -> str:
+    """Build full voice name from display name, e.g. 'Charon' -> 'en-GB-Chirp3-HD-Charon'."""
+    return f"{language}-Chirp3-HD-{display_name}"
+
+
+# ── Text chunking for TTS ──
+
+def chunk_text_for_tts(text: str, max_bytes: int = MAX_TTS_BYTES) -> List[Dict[str, Any]]:
+    """
+    Split text into chunks that fit within the TTS byte limit.
+    Tries to break at sentence boundaries for natural speech flow.
+    Returns list of dicts with 'text', 'index', 'is_section_start' keys.
+    """
+    if not text or not text.strip():
+        return []
+
+    # Split into paragraphs first
+    paragraphs = re.split(r'\n\s*\n', text.strip())
+    chunks = []
+    current_chunk = ""
+    chunk_index = 0
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+
+        # Check if adding this paragraph would exceed the limit
+        test_chunk = (current_chunk + "\n\n" + para).strip() if current_chunk else para
+        if len(test_chunk.encode('utf-8')) <= max_bytes:
+            current_chunk = test_chunk
+        else:
+            # Save current chunk if it has content
+            if current_chunk.strip():
+                chunks.append({
+                    'text': current_chunk.strip(),
+                    'index': chunk_index,
+                    'is_section_start': _is_section_start(current_chunk),
+                })
+                chunk_index += 1
+
+            # Try to fit the paragraph; if it's too long, split by sentences
+            if len(para.encode('utf-8')) <= max_bytes:
+                current_chunk = para
+            else:
+                # Split long paragraph by sentences
+                sentences = re.split(r'(?<=[.!?])\s+', para)
+                current_chunk = ""
+                for sentence in sentences:
+                    test = (current_chunk + " " + sentence).strip() if current_chunk else sentence
+                    if len(test.encode('utf-8')) <= max_bytes:
+                        current_chunk = test
+                    else:
+                        if current_chunk.strip():
+                            chunks.append({
+                                'text': current_chunk.strip(),
+                                'index': chunk_index,
+                                'is_section_start': False,
+                            })
+                            chunk_index += 1
+                        # If a single sentence exceeds the limit, force-split it
+                        if len(sentence.encode('utf-8')) > max_bytes:
+                            for sub in _force_split(sentence, max_bytes):
+                                chunks.append({
+                                    'text': sub,
+                                    'index': chunk_index,
+                                    'is_section_start': False,
+                                })
+                                chunk_index += 1
+                            current_chunk = ""
+                        else:
+                            current_chunk = sentence
+
+    # Don't forget the last chunk
+    if current_chunk.strip():
+        chunks.append({
+            'text': current_chunk.strip(),
+            'index': chunk_index,
+            'is_section_start': _is_section_start(current_chunk),
+        })
+
+    return chunks
+
+
+def _is_section_start(text: str) -> bool:
+    """Check if text starts with a section header pattern."""
+    first_line = text.strip().split('\n')[0].strip()
+    # Matches patterns like "Abstract.", "New section: Methods.", "Introduction.", etc.
+    return bool(re.match(
+        r'^(Abstract|New section:|Introduction|Methods|Results|Discussion|Conclusion)',
+        first_line, re.IGNORECASE
+    ))
+
+
+def _force_split(text: str, max_bytes: int) -> List[str]:
+    """Force-split text at word boundaries when a single sentence exceeds the limit."""
+    words = text.split()
+    parts = []
+    current = ""
+    for word in words:
+        test = (current + " " + word).strip() if current else word
+        if len(test.encode('utf-8')) <= max_bytes:
+            current = test
+        else:
+            if current:
+                parts.append(current)
+            current = word
+    if current:
+        parts.append(current)
+    return parts
+
+
+# ── Audio Generator Class ──
+
+class AudioGenerator:
+    """Google Cloud TTS audio generator with chunking and concatenation."""
+
+    def __init__(self):
+        self.client = None
+        self.is_ready = False
+        self._last_request_time = 0.0
+
+        # Default settings
+        self.voice_name = DEFAULT_VOICE
+        self.language_code = DEFAULT_LANGUAGE
+        self.speaking_rate = DEFAULT_SPEAKING_RATE
+        self.audio_format = DEFAULT_ENCODING
+        self.bitrate = "128k"
+        self.volume_gain_db = 0.0
+        self.normalize_audio = True
+
+        # Initialize client
+        self._init_client()
+
+    def _init_client(self):
+        """Initialize the Google Cloud TTS client."""
+        if not TTS_AVAILABLE:
+            print("Google Cloud TTS SDK not available")
+            return
+
+        # If GOOGLE_APPLICATION_CREDENTIALS points to a missing file,
+        # unset it so the SDK falls back to Application Default Credentials
+        gac = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '')
+        if gac and not os.path.exists(gac):
+            print(f"Note: GOOGLE_APPLICATION_CREDENTIALS file not found: {gac}")
+            print("  Unsetting it to use Application Default Credentials instead.")
+            del os.environ['GOOGLE_APPLICATION_CREDENTIALS']
+
+        try:
+            self.client = texttospeech.TextToSpeechClient()
+            self.is_ready = True
+            print("Google Cloud TTS client initialized")
+        except Exception as e:
+            print(f"Failed to initialize TTS client: {e}")
+            print("Make sure Google Cloud credentials are configured:")
+            print("  gcloud auth application-default login")
+            print("  or: export GOOGLE_APPLICATION_CREDENTIALS='/path/to/key.json'")
+            self.is_ready = False
+
+    def _get_audio_encoding(self) -> 'texttospeech.AudioEncoding':
+        """Get the TTS audio encoding enum for the current format."""
+        fmt = self.audio_format.upper()
+        if fmt in ("MP3", "M4B"):
+            # M4B: we synthesize as MP3 then convert via pydub to M4A/M4B
+            return texttospeech.AudioEncoding.MP3
+        elif fmt == "WAV":
+            return texttospeech.AudioEncoding.LINEAR16
+        elif fmt == "OGG":
+            return texttospeech.AudioEncoding.OGG_OPUS
+        else:
+            return texttospeech.AudioEncoding.MP3
+
+    def _rate_limit(self):
+        """Enforce rate limiting between API calls."""
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < MIN_REQUEST_INTERVAL:
+            time.sleep(MIN_REQUEST_INTERVAL - elapsed)
+        self._last_request_time = time.time()
+
+    def synthesize_chunk(self, text: str) -> Optional[bytes]:
+        """
+        Synthesize a single text chunk to audio bytes.
+        Returns raw audio bytes (MP3/WAV/OGG) or None on failure.
+        """
+        if not self.is_ready or not self.client:
+            return None
+
+        try:
+            self._rate_limit()
+
+            synthesis_input = texttospeech.SynthesisInput(text=text)
+
+            voice_params = texttospeech.VoiceSelectionParams(
+                language_code=self.language_code,
+                name=self.voice_name,
+            )
+
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=self._get_audio_encoding(),
+                speaking_rate=self.speaking_rate,
+                volume_gain_db=self.volume_gain_db,
+            )
+
+            response = self.client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice_params,
+                audio_config=audio_config,
+            )
+
+            return response.audio_content
+
+        except Exception as e:
+            print(f"TTS synthesis error: {e}")
+            return None
+
+    def generate_audio(
+        self,
+        text: str,
+        output_path: str,
+        title: str = "",
+        author: str = "",
+        description: str = "",
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate a complete audio file from text.
+
+        Args:
+            text: The full text to convert to speech.
+            output_path: Output file path (.mp3, .wav, .ogg, or .m4b).
+            title: Podcast/paper title for metadata.
+            author: Author name for metadata.
+            description: Description text for metadata.
+            progress_callback: Callback(message, progress_fraction).
+
+        Returns:
+            Dict with success, output_path, duration_seconds, file_size_bytes, etc.
+        """
+        start_time = time.time()
+
+        if not self.is_ready:
+            return {
+                'success': False,
+                'error': 'TTS client not initialized. Check Google Cloud credentials.',
+                'output_path': '',
+            }
+
+        if not text or not text.strip():
+            return {
+                'success': False,
+                'error': 'No text provided.',
+                'output_path': '',
+            }
+
+        # Determine output format from path extension
+        out_path = Path(output_path)
+        ext = out_path.suffix.lower()
+        if ext == '.m4b':
+            self.audio_format = 'M4B'
+        elif ext == '.wav':
+            self.audio_format = 'WAV'
+        elif ext == '.ogg':
+            self.audio_format = 'OGG'
+        else:
+            self.audio_format = 'MP3'
+
+        # Step 1: Chunk the text
+        if progress_callback:
+            progress_callback("Splitting text into chunks...", 0.0)
+
+        chunks = chunk_text_for_tts(text)
+        total_chunks = len(chunks)
+
+        if total_chunks == 0:
+            return {
+                'success': False,
+                'error': 'Text produced no valid chunks.',
+                'output_path': '',
+            }
+
+        print(f"Audio generation: {total_chunks} chunks to synthesize")
+
+        # Step 2: Synthesize each chunk
+        audio_segments = []
+        chapter_markers = []  # (title, start_ms) for M4B chapters
+        failed_chunks = 0
+        current_ms = 0
+
+        for i, chunk_info in enumerate(chunks):
+            chunk_text = chunk_info['text']
+            chunk_idx = chunk_info['index']
+            is_section = chunk_info.get('is_section_start', False)
+
+            if progress_callback:
+                pct = (i / total_chunks) * 0.8  # 80% for synthesis
+                progress_callback(
+                    f"Synthesizing chunk {i + 1}/{total_chunks}...", pct
+                )
+
+            # Retry logic
+            audio_bytes = None
+            for attempt in range(3):
+                audio_bytes = self.synthesize_chunk(chunk_text)
+                if audio_bytes:
+                    break
+                print(f"  Retry {attempt + 1} for chunk {i + 1}")
+                time.sleep(1.0 * (attempt + 1))
+
+            if audio_bytes:
+                try:
+                    # Load into pydub
+                    fmt_for_pydub = "mp3" if self.audio_format in ("MP3", "M4B") else (
+                        "wav" if self.audio_format == "WAV" else "ogg"
+                    )
+                    segment = AudioSegment.from_file(
+                        _bytes_to_tempfile(audio_bytes, f".{fmt_for_pydub}"),
+                        format=fmt_for_pydub,
+                    )
+
+                    # Track chapter marker if this is a section start
+                    if is_section:
+                        section_title = chunk_text.strip().split('\n')[0].strip()
+                        section_title = section_title.rstrip('.')
+                        chapter_markers.append((section_title, current_ms))
+
+                    current_ms += len(segment)
+                    audio_segments.append(segment)
+
+                except Exception as e:
+                    print(f"  Error loading audio for chunk {i + 1}: {e}")
+                    failed_chunks += 1
+            else:
+                failed_chunks += 1
+                print(f"  Failed to synthesize chunk {i + 1}")
+
+        if not audio_segments:
+            return {
+                'success': False,
+                'error': 'All chunks failed to synthesize.',
+                'output_path': '',
+            }
+
+        # Step 3: Concatenate audio segments
+        if progress_callback:
+            progress_callback("Concatenating audio segments...", 0.82)
+
+        combined = audio_segments[0]
+        for seg in audio_segments[1:]:
+            combined += seg
+
+        # Step 4: Normalize audio
+        if self.normalize_audio and PYDUB_AVAILABLE:
+            if progress_callback:
+                progress_callback("Normalizing audio...", 0.88)
+            combined = pydub_normalize(combined)
+
+        # Step 5: Export to file
+        if progress_callback:
+            progress_callback("Exporting audio file...", 0.90)
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if self.audio_format == "M4B":
+                # Export as M4A first (AAC codec), then rename to .m4b
+                # pydub exports m4a via ffmpeg
+                temp_m4a = str(out_path.with_suffix('.m4a'))
+                bitrate_val = self.bitrate if self.bitrate else "128k"
+                combined.export(
+                    temp_m4a,
+                    format="ipod",  # pydub format name for m4a/aac
+                    bitrate=bitrate_val,
+                    parameters=["-movflags", "+faststart"],
+                )
+                # Rename .m4a to .m4b (they are the same container format)
+                import shutil
+                shutil.move(temp_m4a, str(out_path))
+
+            elif self.audio_format == "MP3":
+                bitrate_val = self.bitrate if self.bitrate else "128k"
+                combined.export(
+                    str(out_path), format="mp3", bitrate=bitrate_val
+                )
+
+            elif self.audio_format == "WAV":
+                combined.export(str(out_path), format="wav")
+
+            elif self.audio_format == "OGG":
+                combined.export(str(out_path), format="ogg")
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Failed to export audio: {e}',
+                'output_path': '',
+            }
+
+        # Step 6: Add metadata
+        if progress_callback:
+            progress_callback("Adding metadata...", 0.95)
+
+        try:
+            if self.audio_format == "MP3" and MUTAGEN_AVAILABLE:
+                self._add_mp3_metadata(
+                    str(out_path), title, author, description, chapter_markers
+                )
+            elif self.audio_format == "M4B" and MUTAGEN_AVAILABLE:
+                self._add_m4b_metadata(
+                    str(out_path), title, author, description, chapter_markers,
+                    combined,
+                )
+        except Exception as e:
+            print(f"Warning: failed to add metadata: {e}")
+
+        # Step 7: Calculate statistics
+        elapsed = time.time() - start_time
+        file_size = out_path.stat().st_size
+        duration_seconds = len(combined) / 1000.0
+
+        if progress_callback:
+            progress_callback("Done!", 1.0)
+
+        result = {
+            'success': True,
+            'output_path': str(out_path),
+            'duration_seconds': duration_seconds,
+            'duration_formatted': _format_duration(duration_seconds),
+            'file_size_bytes': file_size,
+            'file_size_formatted': _format_file_size(file_size),
+            'total_chunks': total_chunks,
+            'failed_chunks': failed_chunks,
+            'generation_time_seconds': elapsed,
+            'voice_used': self.voice_name,
+            'speaking_rate': self.speaking_rate,
+            'audio_format': self.audio_format,
+            'chapter_count': len(chapter_markers),
+        }
+
+        print(f"Audio generated: {result['duration_formatted']}, "
+              f"{result['file_size_formatted']}, {elapsed:.1f}s")
+
+        return result
+
+    def preview_voice(
+        self,
+        sample_text: str = "This is a preview of the selected voice for Science2Go.",
+    ) -> Optional[bytes]:
+        """
+        Generate a short audio preview of the current voice settings.
+        Returns MP3 bytes or None.
+        """
+        if not self.is_ready:
+            return None
+
+        # Force MP3 for preview
+        original_format = self.audio_format
+        self.audio_format = "MP3"
+        audio_bytes = self.synthesize_chunk(sample_text)
+        self.audio_format = original_format
+        return audio_bytes
+
+    # ── Metadata helpers ──
+
+    def _add_mp3_metadata(
+        self,
+        file_path: str,
+        title: str,
+        author: str,
+        description: str,
+        chapters: List[tuple],
+    ):
+        """Add ID3 tags and chapter markers to MP3 file."""
+        try:
+            audio = MP3(file_path)
+        except ID3NoHeaderError:
+            audio = MP3(file_path)
+            audio.add_tags()
+
+        if audio.tags is None:
+            audio.add_tags()
+
+        audio.tags.add(TIT2(encoding=3, text=title or "Science2Go Podcast"))
+        audio.tags.add(TPE1(encoding=3, text=author or "Science2Go"))
+        audio.tags.add(TALB(encoding=3, text="Science2Go"))
+        audio.tags.add(TDRC(encoding=3, text=str(datetime.now().year)))
+        audio.tags.add(TCON(encoding=3, text="Podcast"))
+        audio.tags.add(TPUB(encoding=3, text="Science2Go"))
+
+        if description:
+            audio.tags.add(COMM(
+                encoding=3, lang='eng', desc='Description', text=description
+            ))
+
+        # Add chapter markers if available
+        if chapters:
+            total_ms = int(audio.info.length * 1000)
+            child_ids = []
+            for i, (ch_title, start_ms) in enumerate(chapters):
+                end_ms = chapters[i + 1][1] if i + 1 < len(chapters) else total_ms
+                element_id = f"chp{i}"
+                child_ids.append(element_id)
+
+                audio.tags.add(CHAP(
+                    element_id=element_id,
+                    start_time=int(start_ms),
+                    end_time=int(end_ms),
+                    sub_frames=[TIT2(encoding=3, text=ch_title)],
+                ))
+
+            audio.tags.add(CTOC(
+                element_id="toc",
+                flags=3,  # Top-level, ordered
+                child_element_ids=child_ids,
+                sub_frames=[TIT2(encoding=3, text="Table of Contents")],
+            ))
+
+        audio.save()
+
+    def _add_m4b_metadata(
+        self,
+        file_path: str,
+        title: str,
+        author: str,
+        description: str,
+        chapters: List[tuple],
+        combined_segment: 'AudioSegment',
+    ):
+        """Add MP4/M4B metadata tags. Chapter markers via ffmpeg if available."""
+        try:
+            audio = MP4(file_path)
+            audio["\xa9nam"] = title or "Science2Go Podcast"
+            audio["\xa9ART"] = author or "Science2Go"
+            audio["\xa9alb"] = "Science2Go"
+            audio["\xa9day"] = str(datetime.now().year)
+            audio["\xa9gen"] = "Podcast"
+            if description:
+                audio["\xa9cmt"] = description
+
+            audio.save()
+
+            # M4B chapter embedding requires ffmpeg + chapter metadata file
+            # For now, chapters are stored in the description as text
+            if chapters:
+                chapter_text = "Chapters:\n"
+                for ch_title, start_ms in chapters:
+                    t = _format_duration(start_ms / 1000.0)
+                    chapter_text += f"  {t} - {ch_title}\n"
+                audio = MP4(file_path)
+                audio["\xa9cmt"] = (description or "") + "\n\n" + chapter_text
+                audio.save()
+
+        except Exception as e:
+            print(f"Warning: M4B metadata error: {e}")
+
+    def list_available_voices(self) -> Dict[str, List[str]]:
+        """
+        List available Chirp 3 HD voices from the API, or fall back to hardcoded list.
+        Returns dict with 'male' and 'female' keys.
+        """
+        # Try API listing first
+        if self.is_ready and self.client:
+            try:
+                response = self.client.list_voices(language_code=self.language_code)
+                male = []
+                female = []
+                for voice in response.voices:
+                    if "Chirp3-HD" in voice.name:
+                        # Determine gender from known lists
+                        if voice.name in CHIRP3_HD_MALE_VOICES:
+                            male.append(voice.name)
+                        elif voice.name in CHIRP3_HD_FEMALE_VOICES:
+                            female.append(voice.name)
+                        else:
+                            male.append(voice.name)  # Default to male list
+                if male or female:
+                    return {'male': sorted(male), 'female': sorted(female)}
+            except Exception:
+                pass
+
+        # Fallback to hardcoded
+        return {
+            'male': CHIRP3_HD_MALE_VOICES,
+            'female': CHIRP3_HD_FEMALE_VOICES,
+        }
+
+
+# ── Helper functions ──
+
+def _bytes_to_tempfile(audio_bytes: bytes, suffix: str = ".mp3") -> str:
+    """Write audio bytes to a temp file and return the path."""
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(audio_bytes)
+    tmp.close()
+    return tmp.name
+
+
+def _format_duration(seconds: float) -> str:
+    """Format seconds into HH:MM:SS or MM:SS."""
+    total = int(seconds)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_file_size(size_bytes: int) -> str:
+    """Format file size into human-readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+# ── Module-level instance ──
+
+audio_generator = AudioGenerator()

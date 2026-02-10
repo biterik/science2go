@@ -13,6 +13,10 @@ user_prompt: |
   3. Convert mathematical symbols to words: α→alpha, β→beta, etc.
   4. Spell out abbreviated units: μm→micrometers, GPa→gigapascals
   5. Break extremely long sentences (>40 words) into shorter segments
+  6. Insert TTS pause markup tags for natural pacing (NOT SSML, use exact literal tags):
+     - [pause short] — brief pause between related ideas
+     - [pause long] — longer pause after section headers or between major topics
+     Use sparingly: 1-3 per paragraph maximum.
 
   PRESERVE everything else exactly as written.
   Do NOT add any new content, introductions, or explanations.

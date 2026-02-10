@@ -1,252 +1,235 @@
-# Science2Go 🎙️
+# Science2Go
 
-**Transform Academic Papers into Engaging Podcasts**
+**Convert Academic Papers into Podcast-Style Audio**
 
-Science2Go is a comprehensive Python application that converts academic papers (PDF metadata + Markdown content) into high-quality podcast episodes using AI-powered text processing and professional text-to-speech technology.
+Science2Go transforms scientific PDF papers into high-quality audio files using AI text processing and Google Cloud Text-to-Speech. The pipeline extracts text from PDFs, cleans it for spoken delivery with Gemini AI, and synthesizes natural-sounding speech with Chirp 3 HD voices.
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Cross-Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)]()
 
 ---
 
-## 🚀 Quick Start
+## Pipeline Overview
 
-### 1. Clone and Setup
+```
+PDF  -->  Markdown  -->  AI Cleanup  -->  TTS  -->  MP3 / M4B
+          (marker-pdf     (Gemini 2.5     (Google Cloud TTS
+           or pdftext)      Flash)          Chirp 3 HD)
+```
+
+| Step | Component | Status |
+|------|-----------|--------|
+| 1 | PDF loading & metadata extraction | Done |
+| 2 | PDF to Markdown conversion | Done |
+| 3 | AI text cleanup for TTS | Done |
+| 4 | Save/Load processed text | Done |
+| 5 | Text-to-Speech audio generation | Done |
+| 6 | Audio post-processing & metadata | Done |
+| GUI | CustomTkinter interface (4 tabs) | Done |
+
+---
+
+## Quick Start
+
+### 1. Clone and set up the environment
+
 ```bash
-git clone https://github.com/yourusername/science2go.git
+git clone https://github.com/biterik/science2go.git
 cd science2go
 
-# Automated setup (handles everything)
-python setup.py
-
-# OR manual setup
+# Create conda environment (recommended)
 conda env create -f environment.yml
 conda activate science2go
+
+# Optional: enable PDF-to-Markdown (pulls in PyTorch ~2GB)
+pip install marker-pdf pdftext
 ```
 
-### 2. Configure API Keys
+### 2. Configure API keys
 
-**Option A: Shell Environment Variables (Recommended - Secure)**
 ```bash
-# Add to ~/.zshrc or ~/.bashrc
-export GEMINI_API_KEY="your_gemini_api_key_here"
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-# OR alternatively:
-export GOOGLE_API_KEY="your_google_api_key_here"
+# Add to ~/.zshrc or ~/.bashrc:
+export GEMINI_API_KEY="your_gemini_api_key"
+export GOOGLE_API_KEY="your_google_api_key"
 
-source ~/.zshrc  # Reload shell
+source ~/.zshrc
 ```
 
-**Option B: Local .env File (Alternative)**
+**Get your keys:**
+- Gemini API Key: [Google AI Studio](https://aistudio.google.com/app/apikey)
+- Google Cloud TTS: [Console](https://console.cloud.google.com/apis/credentials) or run `gcloud auth application-default login`
+
+### 3. Run
+
 ```bash
-cp .env.template .env
-# Edit .env with your API keys (this file is git-ignored)
-```
-
-### 3. Get Your API Keys
-
-- **Gemini API Key**: [Google AI Studio](https://aistudio.google.com/app/apikey)
-- **Google Cloud TTS**: [Console Credentials](https://console.cloud.google.com/apis/credentials)
-
-### 4. Run Science2Go
-```bash
-python main.py
+./run.sh
+# or: python main.py
 ```
 
 ---
 
-## 🎯 How It Works
+## Features
 
-### Input Process
-1. **📄 PDF Upload**: Extract paper metadata (title, authors, abstract)
-2. **📝 Markdown File**: Load your prepared content (.md/.txt file)
-3. **🤖 AI Processing**: Gemini optimizes text for audio consumption
-4. **✏️ Review & Edit**: Fine-tune the processed content
-5. **🎙️ Generate Podcast**: Custom voice TTS with chapter markers
+### PDF to Markdown Conversion
 
-### Smart Text Processing
-- ❌ Removes figure/table references  
-- 🔤 Converts equations to spoken form
-- 📚 Eliminates citation clutter
-- ✂️ Optimizes for audio flow
-- ✅ Maintains academic accuracy
+Three conversion modes with automatic PDF type detection:
+
+| Mode | Speed | Use case |
+|------|-------|----------|
+| **Fast Extract** | ~1-5s | Native PDFs with selectable text |
+| **Marker (no OCR)** | ~30s | Native PDFs needing layout detection |
+| **Full Pipeline** | ~2-5min | Scanned PDFs requiring OCR |
+
+When you browse a PDF, the app auto-detects whether it has native text and recommends the appropriate mode. Fast Extract uses `pdftext` for direct text extraction without any ML models.
+
+### AI Text Processing
+
+Gemini 2.5 Flash processes the extracted text through customizable YAML templates:
+
+- **Review Papers** template: optimized for comprehensive review articles
+- **Technical Papers** template: preserves technical detail with minimal reduction
+- **Custom** template: basic cleanup with maximum content preservation
+
+The AI processing:
+- Removes citations, figure/table references, and front/back matter
+- Expands abbreviations and symbols for spoken delivery
+- Converts section headers to narrator-friendly format
+- Inserts `[pause short]` and `[pause long]` markup for Chirp 3 HD voice pacing
+- Preserves all scientific content and accuracy
+
+### Audio Generation
+
+- **Chirp 3 HD voices**: 30 en-GB voices (16 male, 14 female), the most natural-sounding Google TTS voices
+- **Speaking rate control**: 0.25x to 2.0x (default 0.95x for comprehension)
+- **Output formats**: MP3, WAV, OGG, M4B (audiobook with chapters)
+- **Automatic text chunking**: splits text at sentence boundaries to fit the 5,000 byte API limit
+- **Chapter markers**: auto-detected from section headers, embedded as ID3 CHAP frames
+- **Audio normalization**: optional volume normalization via pydub
+- **MP3/M4B metadata**: title, author, description, genre tags via mutagen
+
+### GUI
+
+Four-tab CustomTkinter interface:
+
+1. **Paper Setup** - PDF browse, metadata extraction (CrossRef API), PDF-to-Markdown conversion
+2. **Markdown Processing** - AI processing with template selection, save/load for source and processed text
+3. **Audio Config** - Voice selection, speaking rate, output format, bitrate, voice preview
+4. **Output Generation** - Generate button with progress tracking, results display, file open/export
 
 ---
 
-## 🎛️ Features
-
-### 🎙️ **Professional Audio Quality**
-- Custom Google TTS voices (e.g., `en-GB-Chirp3-HD-Algenib`)
-- Natural pacing with automatic pauses
-- Podcast-optimized encoding (44.1kHz, 128kbps MP3)
-- Chapter markers and metadata embedding
-
-### 🤖 **AI-Powered Processing**  
-- Google Gemini text optimization
-- Template-based prompts (Review Papers, Technical Papers, Custom)
-- Editable processed content
-- TTS-optimized output
-
-### 🖥️ **Cross-Platform GUI**
-- Native look and feel (macOS/Windows/Linux)
-- Intuitive tabbed interface
-- Real-time progress tracking
-- Built-in audio player
-
-### 📊 **Template System**
-- YAML-based prompt templates
-- Specialized processing for different paper types
-- Custom template creation
-- Reusable configurations
-
----
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 science2go/
-├── main.py                     # Application entry point
-├── environment.yml             # Conda environment
-├── requirements.txt            # Pip alternative  
-├── setup.py                   # Cross-platform setup
-├── .env.template              # API key template (safe for GitHub)
-│
-├── src/
-│   ├── config/settings.py     # Configuration management
-│   ├── gui/                   # Cross-platform interface
-│   ├── processors/            # PDF, AI, and audio processing
-│   ├── templates/             # YAML prompt templates
-│   └── utils/                 # Helper utilities
-│
-├── output/                    # Generated content (git-ignored)
-│   ├── audio/                # Podcast files
-│   ├── temp/                 # Processing temp files
-│   └── projects/             # Saved configurations
-│
-└── tests/                    # Unit tests
+  main.py                          # Entry point
+  run.sh                           # Launcher (uses correct Python)
+  environment.yml                  # Conda environment
+  requirements.txt                 # Pip dependencies
+  setup.py                         # Automated setup script
+  TODO.md                          # Detailed task tracking
+
+  src/
+    config/
+      settings.py                  # API keys, paths, audio defaults
+    gui/
+      main_window.py               # Main 4-tab GUI
+      platform_utils.py            # Cross-platform helpers
+    processors/
+      pdf_metadata.py              # PDF metadata extraction (PyPDF2 + CrossRef)
+      pdf_converter.py             # PDF-to-Markdown (marker-pdf + pdftext)
+      text_processor.py            # Gemini AI text cleanup
+      audio_generator.py           # Google Cloud TTS + pydub + mutagen
+    templates/
+      review_papers.yaml           # Review paper cleanup template
+      technical_papers.yaml        # Technical paper cleanup template
+      custom_template.yaml         # Minimal cleanup template
+      template_manager.py          # YAML template loader
+
+  output/                          # Generated content (git-ignored)
+    audio/                         # Podcast MP3/M4B files
+    projects/                      # Saved text files
+    temp/                          # Processing temp files
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-Science2Go automatically detects API keys from:
-1. **Shell environment** (secure, recommended)
-2. **Local .env file** (development)  
-3. **System environment variables**
+### Voice Selection
 
-### Voice Configuration
-```python
-# Use any Google TTS voice name
-voice_name = "en-GB-Chirp3-HD-Algenib"
-speaking_rate = 0.95  # Slightly slower for comprehension
-pitch = 0.0           # Neutral pitch
-```
+The default voice is `en-GB-Chirp3-HD-Charon` (male, British English). All 30 Chirp 3 HD en-GB voices are available in the Audio Config tab.
 
-### Audio Output Settings
-- **Format**: MP3 with podcast optimization
-- **Quality**: 44.1kHz, 128kbps, normalized to -23 LUFS
-- **Features**: Chapter markers, metadata, mono encoding
+Note: Chirp 3 HD does **not** support pitch control or SSML prosody tags. Use `speaking_rate` (0.25-2.0) for pace control and inline `[pause short]` / `[pause long]` tags for pauses.
 
----
+### Audio Defaults
 
-## 🔒 Security & Privacy
+| Setting | Default | Notes |
+|---------|---------|-------|
+| Speaking rate | 0.95x | Slightly slower for comprehension |
+| Format | MP3 | Also supports WAV, OGG, M4B |
+| Bitrate | 128k | Options: 64k-320k |
+| Normalize | On | Volume normalization |
 
-### GitHub Safety
-- ✅ **No API keys in repository** - uses environment variables
-- ✅ **User data git-ignored** - output files never committed  
-- ✅ **Safe configuration** - template files only
-- ✅ **Open source** - transparent and auditable
+### Environment Variables
 
-### Local Security
-- API keys stored in shell environment (not in files)
-- Temporary files automatically cleaned up
-- User content stays local (never transmitted except to AI services)
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GEMINI_API_KEY` | Yes | Gemini AI text processing |
+| `GOOGLE_API_KEY` | For TTS | Google Cloud TTS synthesis |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Alt. TTS | Service account JSON path |
+
+If neither `GOOGLE_API_KEY` nor `GOOGLE_APPLICATION_CREDENTIALS` is set, the app checks for Application Default Credentials (`~/.config/gcloud/application_default_credentials.json` from `gcloud auth application-default login`).
 
 ---
 
-## 🛠️ Development
+## Dependencies
 
-### Requirements
-- Python 3.11+
-- Google Cloud TTS API access
-- Google Generative AI (Gemini) API access
+### Required
 
-### Installation Methods
-```bash
-# Method 1: Conda (recommended)
-conda env create -f environment.yml
+| Package | Version | Purpose |
+|---------|---------|---------|
+| customtkinter | >=5.2.0 | Modern GUI framework |
+| google-generativeai | >=0.8.0 | Gemini AI text processing |
+| PyYAML | >=6.0.1 | Template loading |
+| python-dotenv | >=1.0.0 | Environment config |
+| PyPDF2 | >=3.0.1 | PDF metadata extraction |
 
-# Method 2: Pip
-pip install -r requirements.txt
+### For Audio Generation
 
-# Method 3: Automated
-python setup.py
-```
+| Package | Version | Purpose |
+|---------|---------|---------|
+| google-cloud-texttospeech | >=2.27.0 | TTS synthesis |
+| pydub | >=0.25.1 | Audio concatenation & normalization |
+| mutagen | >=1.47.0 | MP3/M4B metadata tagging |
+| ffmpeg | (system) | Audio codec support for pydub |
 
-### Contributing
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+### Optional (PDF-to-Markdown)
 
----
+| Package | Version | Purpose |
+|---------|---------|---------|
+| marker-pdf | >=1.10.0 | Full PDF conversion with layout detection |
+| pdftext | >=0.6.0 | Fast native text extraction |
 
-## 📜 License
-
-This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License**.
-
-- ✅ **Attribution** - Credit the original author
-- ❌ **NonCommercial** - No commercial use without permission
-- ✅ **ShareAlike** - Derivatives must use same license
-
-**Full License**: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
-
-For commercial licensing, please contact the author.
+marker-pdf pulls in PyTorch (~2GB). If you only work with native PDFs (not scanned), `pdftext` alone is sufficient.
 
 ---
 
-## 🎯 Roadmap
+## License
 
-### v1.0 - Core Features (Current)
-- [x] Cross-platform GUI
-- [x] PDF metadata extraction
-- [x] Markdown processing
-- [x] Gemini AI integration
-- [x] Custom voice TTS
-- [x] Podcast optimization
+**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International**
 
-### v1.1 - Enhancements
-- [ ] Batch processing
-- [ ] Advanced audio effects
-- [ ] RSS feed generation
-- [ ] Cloud storage integration
+- Attribution required
+- Non-commercial use only
+- Derivatives must use the same license
 
-### v2.0 - Advanced Features
-- [ ] Multi-language support
-- [ ] Custom voice cloning
-- [ ] Automated chapter generation
-- [ ] Plugin system
+Full license: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 ---
 
-## 🤝 Support
+## Acknowledgments
 
-- 📖 **Documentation**: See inline code comments and docstrings
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/science2go/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/science2go/discussions)
-- 📧 **Contact**: [Your contact information]
-
----
-
-## 🙏 Acknowledgments
-
-- Google Cloud Text-to-Speech for professional voice synthesis
-- Google Generative AI (Gemini) for intelligent text processing
-- The academic community for inspiration and feedback
-
----
-
-*Created with ❤️ for the research community*
+- [Google Cloud Text-to-Speech](https://cloud.google.com/text-to-speech) (Chirp 3 HD voices)
+- [Google Generative AI](https://ai.google.dev/) (Gemini 2.5 Flash)
+- [marker-pdf](https://github.com/VikParuchuri/marker) (PDF-to-Markdown conversion)
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (Modern GUI)
