@@ -24,8 +24,10 @@ try:
         AudioGenerator, audio_generator, TTS_AVAILABLE,
         AUDIO_FORMATS, BITRATE_OPTIONS,
         CHIRP3_HD_MALE_VOICES, CHIRP3_HD_FEMALE_VOICES, ALL_CHIRP3_HD_VOICES,
+        NEURAL2_MALE_VOICES, NEURAL2_FEMALE_VOICES, ALL_NEURAL2_VOICES,
+        VOICE_MODELS, VOICE_MODEL_CHIRP3_HD, VOICE_MODEL_NEURAL2,
         voice_display_name, voice_full_name,
-        chunk_text_for_tts,
+        chunk_text_for_tts, chunk_ssml_for_tts, is_ssml_content,
     )
 except ImportError:
     TTS_AVAILABLE = False
@@ -39,6 +41,8 @@ __all__ = [
     'AudioGenerator', 'audio_generator', 'TTS_AVAILABLE',
     'AUDIO_FORMATS', 'BITRATE_OPTIONS',
     'CHIRP3_HD_MALE_VOICES', 'CHIRP3_HD_FEMALE_VOICES', 'ALL_CHIRP3_HD_VOICES',
+    'NEURAL2_MALE_VOICES', 'NEURAL2_FEMALE_VOICES', 'ALL_NEURAL2_VOICES',
+    'VOICE_MODELS', 'VOICE_MODEL_CHIRP3_HD', 'VOICE_MODEL_NEURAL2',
     'voice_display_name', 'voice_full_name',
-    'chunk_text_for_tts',
+    'chunk_text_for_tts', 'chunk_ssml_for_tts', 'is_ssml_content',
 ]

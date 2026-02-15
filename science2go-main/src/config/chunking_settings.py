@@ -8,9 +8,8 @@ CHUNKING_CONFIG = {
     # Maximum characters per chunk (safe for Gemini Pro ~8K tokens)
     "max_chunk_size": 30000,
     
-    # Trailing chars from previous chunk's OUTPUT passed as read-only context
-    # to the next chunk's prompt (for continuity, not duplicated in output)
-    "context_preamble_size": 500,
+    # Overlap between chunks to maintain context
+    "overlap_size": 1000,
     
     # Minimum chunk size (prevent tiny chunks)
     "min_chunk_size": 5000,

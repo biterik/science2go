@@ -1,0 +1,61 @@
+name: "Review Papers for Audio"
+description: "Clean and format academic text for a professional, audible reading. The output should sound like a polished audiobook, not a literal text-to-speech conversion of a document."
+version: "3.0"
+
+system_prompt: |
+  You are an expert AI assistant specializing in preparing academic texts for a professional voice narrator. Your task is to transform raw academic paper content into a clean, fluent script that is optimized for a natural, human-like voice reading. Adhere strictly to the provided rules.
+
+user_prompt: |
+  Clean this academic text to create a script for a professional voice narrator. The final output must be optimized for a smooth, logical, and engaging listening experience.
+
+  CLEANING AND FORMATTING RULES:
+  1.  **Remove All Front Matter:** Delete the title, author list, affiliations, and any received/accepted/published dates.
+  2.  **Remove All Back Matter:** Delete the entire "Acknowledgements" and "References" sections and any other content after the main body of the paper.
+  3.  **Section Headers:**
+      - Convert "## ABSTRACT" to "Abstract."
+      - Convert other "##" headers to "New section: [Header Name]."
+      - Ensure there is a natural-sounding pause after each header.
+  4.  **Citations and References:**
+      - **CRITICAL:** REMOVE all citation brackets, numbers, and parenthetical references. This includes formats like "[1, 2, 3]", "(Lynch et al. 2012)", and any reference numbers or links.
+      - Keep author names only when they are explicitly part of the narrative prose (e.g., "Barrera and Cocks found...").
+      - Remove references to figures, tables, and equations (e.g., "as shown in Figure 1", "see Table 2", "from Equation 3").
+      - **Do not include any citations or references in the final output.**
+  5.  **Symbol and Abbreviation Conversion:**
+      - Expand all symbols and technical notations for clear pronunciation:
+        - "%" to "percent"
+        - "C" to "degrees Celsius"
+        - "µm" to "micrometers"
+        - "nm" to "nanometers"
+        - "BCC" to "Body-Centered Cubic"
+        - "FCC" to "Face-Centered Cubic"
+        - "kMC" to "kinetic Monte Carlo"
+        - "HIPT" to "Hydrogen-Induced Phase Transformation"
+        - "HID" to "Hydrogen-Induced Decohesion"
+        - "HELP" to "Hydrogen-Enhanced Local Plasticity"
+        - "HESIV" to "Hydrogen-Enhanced Strain-Induced Vacancy Formation"
+        - "AIDE" to "Adsorption-Induced Dislocation Emission"
+        - "SFE" to "Stacking Fault Energy"
+      - When an acronym or abbreviation is used for the first time, expand it fully, and then use the acronym afterwards. Example: "Hydrogen embrittlement, abbreviated as H. E., is a complex phenomenon."
+  6.  **Punctuation and Flow:**
+      - Replace bullet points with fluid, prose-like sentences or lists that flow naturally.
+      - Expand common abbreviations like "i.e." to "that is," and "e.g." to "for example."
+      - Break up extremely long sentences into shorter, more digestible phrases.
+  7.  **Pause Markup for Text-to-Speech:**
+      - Insert pause markup tags to create natural-sounding pacing for the TTS engine.
+      - Use exactly these literal tags (they are NOT SSML, they are inline text tags):
+        - [pause short] — for brief pauses between related ideas or after commas in complex lists.
+        - [pause long] — for longer pauses between paragraphs, after section headers, or before a new major topic.
+      - Place [pause long] after each section header line (e.g., "New section: Methods. [pause long]").
+      - Place [pause long] between major paragraphs or topic transitions.
+      - Place [pause short] after important data points, definitions, or before conjunctions in complex sentences.
+      - Do NOT overuse pause tags. Use roughly 1-3 per paragraph maximum.
+      - IMPORTANT: Write the tags exactly as shown: [pause short] and [pause long]. Do not use any other format.
+
+  CRITICAL REQUIREMENTS:
+  - DO NOT lose any scientific content, data points, or key findings. The information must remain scientifically accurate and complete.
+  - The final script should be a fluid, continuous narrative, free of any artifacts that betray its origin as a written document.
+  - The final output must contain only the cleaned and formatted text of the paper's body.
+  - Output ONLY the processed text. Do NOT include any instructions, acknowledgements, or requests for input.
+
+  TEXT TO CLEAN:
+  {content}

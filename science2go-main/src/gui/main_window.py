@@ -1,6 +1,15 @@
 """
 Science2Go Main Window - CustomTkinter GUI
-Modern cross-platform interface with PDF-to-Markdown conversion and AI processing.
+Modern cross-platform interface with PDF-to-Markdown conversion, AI processing,
+SSML conversion, and audio generation.
+
+Tab layout (6 tabs):
+  1. Paper Information    — metadata form + audio description
+  2. PDF to Markdown      — PDF upload, conversion, markdown preview
+  3. Markdown Processing   — AI processing with templates
+  4. MD to SSML           — SSML conversion, editing, save/load
+  5. Audio Config         — voice, rate, pitch, format, preview
+  6. Speech Output        — generate audio, progress, results
 """
 
 import tkinter as tk
@@ -61,7 +70,10 @@ try:
         audio_generator, TTS_AVAILABLE,
         AUDIO_FORMATS, BITRATE_OPTIONS,
         CHIRP3_HD_MALE_VOICES, CHIRP3_HD_FEMALE_VOICES,
+        NEURAL2_MALE_VOICES, NEURAL2_FEMALE_VOICES,
+        VOICE_MODELS, VOICE_MODEL_CHIRP3_HD, VOICE_MODEL_NEURAL2,
         voice_display_name, voice_full_name,
+        is_ssml_content,
         DEFAULT_VOICE, DEFAULT_SPEAKING_RATE,
     )
 except ImportError:
@@ -71,8 +83,14 @@ except ImportError:
     BITRATE_OPTIONS = ["64k", "96k", "128k", "192k", "256k", "320k"]
     CHIRP3_HD_MALE_VOICES = []
     CHIRP3_HD_FEMALE_VOICES = []
+    NEURAL2_MALE_VOICES = []
+    NEURAL2_FEMALE_VOICES = []
+    VOICE_MODELS = ["Chirp 3 HD", "Neural2"]
+    VOICE_MODEL_CHIRP3_HD = "Chirp 3 HD"
+    VOICE_MODEL_NEURAL2 = "Neural2"
     voice_display_name = lambda x: x
-    voice_full_name = lambda x, y="en-GB": x
+    voice_full_name = lambda x, y="en-GB", z="Chirp 3 HD": x
+    is_ssml_content = lambda x: x.strip().startswith('<speak>')
     DEFAULT_VOICE = "en-GB-Chirp3-HD-Charon"
     DEFAULT_SPEAKING_RATE = 0.95
 
@@ -96,6 +114,7 @@ class Science2GoApp:
         self.converted_markdown = ""  # Stores PDF-to-Markdown result
         self.current_processed_file = None  # Track loaded processed file
         self.current_source_file = None  # Track loaded/saved source markdown file
+        self.current_ssml_file = None  # Track loaded/saved SSML file
 
         # PDF extractor
         if PDF_METADATA_AVAILABLE:
@@ -169,7 +188,7 @@ class Science2GoApp:
         help_menu.add_command(label="Documentation", command=self.open_documentation)
 
     def setup_main_interface(self):
-        """Create the main tabbed interface"""
+        """Create the main tabbed interface with 6 pipeline tabs"""
         # Main container
         main_frame = ctk.CTkFrame(self.root)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -180,40 +199,44 @@ class Science2GoApp:
         main_frame.grid_rowconfigure(0, weight=1)
         main_frame.grid_columnconfigure(0, weight=1)
 
-        # Create tabview (replaces ttk.Notebook)
+        # Create tabview
         self.tabview = ctk.CTkTabview(main_frame)
         self.tabview.grid(row=0, column=0, sticky="nsew")
 
-        # Add tabs
-        self.tabview.add("Paper Setup")
+        # Add 6 tabs (one per pipeline step)
+        self.tabview.add("Paper Information")
+        self.tabview.add("PDF to Markdown")
         self.tabview.add("Markdown Processing")
+        self.tabview.add("MD to SSML")
         self.tabview.add("Audio Config")
-        self.tabview.add("Output Generation")
+        self.tabview.add("Speech Output")
 
         # Build each tab's content
-        self.create_paper_setup_tab(self.tabview.tab("Paper Setup"))
+        self.create_paper_info_tab(self.tabview.tab("Paper Information"))
+        self.create_pdf_to_markdown_tab(self.tabview.tab("PDF to Markdown"))
         self.create_markdown_processing_tab(self.tabview.tab("Markdown Processing"))
+        self.create_md_to_ssml_tab(self.tabview.tab("MD to SSML"))
         self.create_audio_config_tab(self.tabview.tab("Audio Config"))
-        self.create_output_generation_tab(self.tabview.tab("Output Generation"))
+        self.create_speech_output_tab(self.tabview.tab("Speech Output"))
 
     # ──────────────────────────────────────────────
-    #  Tab 1: Paper Setup
+    #  Tab 1: Paper Information
     # ──────────────────────────────────────────────
 
-    def create_paper_setup_tab(self, parent_frame):
-        """Create the Paper Setup tab with PDF metadata extraction and PDF-to-Markdown"""
-        container = ctk.CTkFrame(parent_frame, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=20, pady=15)
+    def create_paper_info_tab(self, parent_frame):
+        """Create the Paper Information tab with metadata form and description"""
+        container = ctk.CTkScrollableFrame(parent_frame)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
 
         # Title
         ctk.CTkLabel(
-            container, text="Paper Information & Setup",
+            container, text="Paper Information",
             font=ctk.CTkFont(size=18, weight="bold")
-        ).pack(anchor="w", pady=(0, 15))
+        ).pack(anchor="w", padx=15, pady=(10, 15))
 
         # ── PDF Upload Section ──
         upload_section = ctk.CTkFrame(container)
-        upload_section.pack(fill="x", pady=(0, 15))
+        upload_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             upload_section, text="PDF Upload",
@@ -222,7 +245,7 @@ class Science2GoApp:
 
         ctk.CTkLabel(
             upload_section,
-            text="Select your academic paper (PDF):"
+            text="Select your academic paper (PDF) to extract metadata:"
         ).pack(anchor="w", padx=10, pady=(0, 5))
 
         pdf_button_frame = ctk.CTkFrame(upload_section, fg_color="transparent")
@@ -244,12 +267,125 @@ class Science2GoApp:
         )
         self.analyze_btn.pack(side="right")
 
-        # ── PDF to Markdown Conversion Section ──
-        convert_section = ctk.CTkFrame(container)
-        convert_section.pack(fill="x", pady=(0, 15))
+        # ── Paper Information Section (form) ──
+        info_section = ctk.CTkFrame(container)
+        info_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
-            convert_section, text="PDF to Markdown Conversion",
+            info_section, text="Paper Metadata",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(anchor="w", padx=10, pady=(10, 5))
+
+        form_frame = ctk.CTkFrame(info_section, fg_color="transparent")
+        form_frame.pack(fill="x", padx=10, pady=(0, 10))
+        form_frame.grid_columnconfigure(1, weight=1)
+
+        # Title field
+        ctk.CTkLabel(form_frame, text="Title:").grid(
+            row=0, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.title_text = ctk.CTkTextbox(form_frame, height=70, wrap="word")
+        self.title_text.grid(row=0, column=1, sticky="ew", pady=5)
+
+        # Authors field
+        ctk.CTkLabel(form_frame, text="Authors:").grid(
+            row=1, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.authors_var = tk.StringVar()
+        ctk.CTkEntry(form_frame, textvariable=self.authors_var).grid(
+            row=1, column=1, sticky="ew", pady=5)
+
+        # Journal field
+        ctk.CTkLabel(form_frame, text="Journal:").grid(
+            row=2, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.journal_var = tk.StringVar()
+        ctk.CTkEntry(form_frame, textvariable=self.journal_var).grid(
+            row=2, column=1, sticky="ew", pady=5)
+
+        # Year field
+        ctk.CTkLabel(form_frame, text="Year:").grid(
+            row=3, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.year_var = tk.StringVar()
+        ctk.CTkEntry(form_frame, textvariable=self.year_var, width=150).grid(
+            row=3, column=1, sticky="w", pady=5)
+
+        # DOI field
+        ctk.CTkLabel(form_frame, text="DOI:").grid(
+            row=4, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.doi_var = tk.StringVar()
+        ctk.CTkEntry(form_frame, textvariable=self.doi_var).grid(
+            row=4, column=1, sticky="ew", pady=5)
+
+        # Abstract field
+        ctk.CTkLabel(form_frame, text="Abstract:").grid(
+            row=5, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.abstract_text = ctk.CTkTextbox(form_frame, height=120, wrap="word")
+        self.abstract_text.grid(row=5, column=1, sticky="ew", pady=5)
+
+        # ── Generate Description Button ──
+        description_frame = ctk.CTkFrame(container, fg_color="transparent")
+        description_frame.pack(fill="x", padx=15, pady=(0, 10))
+
+        ctk.CTkButton(
+            description_frame, text="Generate Audio Paper Description",
+            command=self.generate_description
+        ).pack(side="right")
+
+        # ── Description Preview ──
+        desc_section = ctk.CTkFrame(container)
+        desc_section.pack(fill="x", padx=15)
+
+        ctk.CTkLabel(
+            desc_section, text="Generated Audio Paper Description",
+            font=ctk.CTkFont(size=13, weight="bold")
+        ).pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.description_text = ctk.CTkTextbox(desc_section, height=120,
+                                               wrap="word", state="disabled")
+        self.description_text.pack(fill="x", padx=10, pady=(0, 10))
+
+    # ──────────────────────────────────────────────
+    #  Tab 2: PDF to Markdown
+    # ──────────────────────────────────────────────
+
+    def create_pdf_to_markdown_tab(self, parent_frame):
+        """Create the PDF to Markdown tab with upload, conversion, and markdown preview"""
+        container = ctk.CTkScrollableFrame(parent_frame)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Title
+        ctk.CTkLabel(
+            container, text="PDF to Markdown Conversion",
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(anchor="w", padx=15, pady=(10, 15))
+
+        # ── Selected PDF (from Tab 1) ──
+        pdf_ref_section = ctk.CTkFrame(container)
+        pdf_ref_section.pack(fill="x", padx=15, pady=(0, 15))
+
+        ctk.CTkLabel(
+            pdf_ref_section, text="Selected PDF",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(anchor="w", padx=10, pady=(10, 5))
+
+        pdf_ref_frame = ctk.CTkFrame(pdf_ref_section, fg_color="transparent")
+        pdf_ref_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        ctk.CTkEntry(
+            pdf_ref_frame, textvariable=self.pdf_path_var,
+            state="readonly",
+        ).pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        ctk.CTkLabel(
+            pdf_ref_frame,
+            text="(Select PDF in the Paper Information tab)",
+            font=ctk.CTkFont(size=10, slant="italic"), text_color="gray",
+        ).pack(side="right")
+
+        # ── PDF to Markdown Conversion Section ──
+        convert_section = ctk.CTkFrame(container)
+        convert_section.pack(fill="x", padx=15, pady=(0, 15))
+
+        ctk.CTkLabel(
+            convert_section, text="Convert to Markdown",
             font=ctk.CTkFont(size=14, weight="bold")
         ).pack(anchor="w", padx=10, pady=(10, 5))
 
@@ -308,101 +444,85 @@ class Science2GoApp:
                 text_color="gray"
             ).pack(padx=10, pady=10)
 
-        # ── Paper Information Section (scrollable form) ──
-        info_section = ctk.CTkFrame(container)
-        info_section.pack(fill="both", expand=True, pady=(0, 15))
+        # ── Markdown File Operations ──
+        md_file_section = ctk.CTkFrame(container)
+        md_file_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
-            info_section, text="Paper Information",
+            md_file_section, text="Markdown File",
             font=ctk.CTkFont(size=14, weight="bold")
         ).pack(anchor="w", padx=10, pady=(10, 5))
 
-        scrollable_form = ctk.CTkScrollableFrame(info_section)
-        scrollable_form.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        ctk.CTkLabel(
+            md_file_section,
+            text="Load an existing markdown file or save the converted result:"
+        ).pack(anchor="w", padx=10, pady=(0, 5))
 
-        # Form fields
-        form_frame = ctk.CTkFrame(scrollable_form, fg_color="transparent")
-        form_frame.pack(fill="x", padx=10, pady=10)
-        form_frame.grid_columnconfigure(1, weight=1)
+        md_btn_frame = ctk.CTkFrame(md_file_section, fg_color="transparent")
+        md_btn_frame.pack(fill="x", padx=10, pady=(0, 5))
 
-        # Title field
-        ctk.CTkLabel(form_frame, text="Title:").grid(
-            row=0, column=0, sticky="nw", padx=(0, 10), pady=5)
-        self.title_text = ctk.CTkTextbox(form_frame, height=70, wrap="word")
-        self.title_text.grid(row=0, column=1, sticky="ew", pady=5)
-
-        # Authors field
-        ctk.CTkLabel(form_frame, text="Authors:").grid(
-            row=1, column=0, sticky="nw", padx=(0, 10), pady=5)
-        self.authors_var = tk.StringVar()
-        ctk.CTkEntry(form_frame, textvariable=self.authors_var).grid(
-            row=1, column=1, sticky="ew", pady=5)
-
-        # Journal field
-        ctk.CTkLabel(form_frame, text="Journal:").grid(
-            row=2, column=0, sticky="nw", padx=(0, 10), pady=5)
-        self.journal_var = tk.StringVar()
-        ctk.CTkEntry(form_frame, textvariable=self.journal_var).grid(
-            row=2, column=1, sticky="ew", pady=5)
-
-        # Year field
-        ctk.CTkLabel(form_frame, text="Year:").grid(
-            row=3, column=0, sticky="nw", padx=(0, 10), pady=5)
-        self.year_var = tk.StringVar()
-        ctk.CTkEntry(form_frame, textvariable=self.year_var, width=150).grid(
-            row=3, column=1, sticky="w", pady=5)
-
-        # DOI field
-        ctk.CTkLabel(form_frame, text="DOI:").grid(
-            row=4, column=0, sticky="nw", padx=(0, 10), pady=5)
-        self.doi_var = tk.StringVar()
-        ctk.CTkEntry(form_frame, textvariable=self.doi_var).grid(
-            row=4, column=1, sticky="ew", pady=5)
-
-        # Abstract field
-        ctk.CTkLabel(form_frame, text="Abstract:").grid(
-            row=5, column=0, sticky="nw", padx=(0, 10), pady=5)
-        self.abstract_text = ctk.CTkTextbox(form_frame, height=120, wrap="word")
-        self.abstract_text.grid(row=5, column=1, sticky="ew", pady=5)
-
-        # ── Generate Description Button ──
-        description_frame = ctk.CTkFrame(container, fg_color="transparent")
-        description_frame.pack(fill="x", pady=(0, 10))
+        self.markdown_path_var = tk.StringVar()
+        ctk.CTkEntry(
+            md_btn_frame, textvariable=self.markdown_path_var,
+            state="readonly"
+        ).pack(side="left", fill="x", expand=True, padx=(0, 10))
 
         ctk.CTkButton(
-            description_frame, text="Generate Audio Paper Description",
-            command=self.generate_description
-        ).pack(side="right")
+            md_btn_frame, text="Browse", width=100,
+            command=self.browse_markdown_file
+        ).pack(side="right", padx=(5, 0))
 
-        # ── Description Preview ──
-        desc_section = ctk.CTkFrame(container)
-        desc_section.pack(fill="x")
+        md_action_frame = ctk.CTkFrame(md_file_section, fg_color="transparent")
+        md_action_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        ctk.CTkButton(
+            md_action_frame, text="Save Markdown", width=120,
+            command=self.save_source_markdown
+        ).pack(side="left", padx=(0, 5))
+
+        ctk.CTkButton(
+            md_action_frame, text="Load Markdown", width=120,
+            command=self.load_source_markdown
+        ).pack(side="left")
+
+        # ── Markdown Preview ──
+        preview_section = ctk.CTkFrame(container)
+        preview_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
-            desc_section, text="Generated Audio Paper Description",
-            font=ctk.CTkFont(size=13, weight="bold")
+            preview_section, text="Markdown Preview",
+            font=ctk.CTkFont(size=14, weight="bold")
         ).pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.description_text = ctk.CTkTextbox(desc_section, height=120,
-                                               wrap="word", state="disabled")
-        self.description_text.pack(fill="x", padx=10, pady=(0, 10))
+        self.md_preview_text = ctk.CTkTextbox(
+            preview_section,
+            font=ctk.CTkFont(family="Consolas", size=11),
+            state="disabled", wrap="word", height=300,
+        )
+        self.md_preview_text.pack(fill="both", expand=True, padx=10, pady=(0, 5))
+
+        self.md_preview_stats_var = tk.StringVar(value="No markdown loaded")
+        ctk.CTkLabel(
+            preview_section, textvariable=self.md_preview_stats_var,
+            font=ctk.CTkFont(size=10, slant="italic"),
+        ).pack(anchor="w", padx=10, pady=(0, 10))
 
     # ──────────────────────────────────────────────
-    #  Tab 2: Markdown Processing
+    #  Tab 3: Markdown Processing
     # ──────────────────────────────────────────────
 
     def create_markdown_processing_tab(self, parent_frame):
         """Create the Markdown Processing tab with AI integration and Save/Load"""
         container = ctk.CTkFrame(parent_frame, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=20, pady=15)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
 
         # Title and Action buttons at the TOP
         title_and_buttons_frame = ctk.CTkFrame(container, fg_color="transparent")
-        title_and_buttons_frame.pack(fill="x", pady=(0, 15))
+        title_and_buttons_frame.pack(fill="x", padx=15, pady=(10, 10))
 
         # Title on the left
         ctk.CTkLabel(
-            title_and_buttons_frame, text="Markdown Content Processing",
+            title_and_buttons_frame, text="AI Content Processing",
             font=ctk.CTkFont(size=18, weight="bold")
         ).pack(side="left", anchor="w")
 
@@ -436,37 +556,9 @@ class Science2GoApp:
             command=self.clear_markdown_content
         ).pack(side="right")
 
-        # ── Markdown File Input Section ──
-        file_section = ctk.CTkFrame(container)
-        file_section.pack(fill="x", pady=(0, 15))
-
-        ctk.CTkLabel(
-            file_section, text="Markdown File Input",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).pack(anchor="w", padx=10, pady=(10, 5))
-
-        ctk.CTkLabel(
-            file_section,
-            text="Select markdown file (.md or .txt) with your paper content:"
-        ).pack(anchor="w", padx=10, pady=(0, 5))
-
-        file_button_frame = ctk.CTkFrame(file_section, fg_color="transparent")
-        file_button_frame.pack(fill="x", padx=10, pady=(0, 10))
-
-        self.markdown_path_var = tk.StringVar()
-        ctk.CTkEntry(
-            file_button_frame, textvariable=self.markdown_path_var,
-            state="readonly"
-        ).pack(side="left", fill="x", expand=True, padx=(0, 10))
-
-        ctk.CTkButton(
-            file_button_frame, text="Browse", width=100,
-            command=self.browse_markdown_file
-        ).pack(side="right")
-
         # ── Template Selection Section ──
         template_section = ctk.CTkFrame(container)
-        template_section.pack(fill="x", pady=(0, 15))
+        template_section.pack(fill="x", padx=15, pady=(0, 10))
 
         ctk.CTkLabel(
             template_section, text="Processing Template",
@@ -499,29 +591,15 @@ class Science2GoApp:
 
         # ── Content Processing Area (inner tabview) ──
         content_section = ctk.CTkFrame(container)
-        content_section.pack(fill="both", expand=True, pady=(0, 15))
+        content_section.pack(fill="both", expand=True, padx=15, pady=(0, 10))
 
         content_header_frame = ctk.CTkFrame(content_section, fg_color="transparent")
         content_header_frame.pack(fill="x", padx=10, pady=(10, 5))
 
         ctk.CTkLabel(
-            content_header_frame, text="Content Processing",
+            content_header_frame, text="Content",
             font=ctk.CTkFont(size=14, weight="bold")
         ).pack(side="left")
-
-        # Source markdown save/load buttons
-        source_btn_frame = ctk.CTkFrame(content_header_frame, fg_color="transparent")
-        source_btn_frame.pack(side="right")
-
-        ctk.CTkButton(
-            source_btn_frame, text="Load Markdown", width=120,
-            command=self.load_source_markdown
-        ).pack(side="right", padx=(5, 0))
-
-        ctk.CTkButton(
-            source_btn_frame, text="Save Markdown", width=120,
-            command=self.save_source_markdown
-        ).pack(side="right")
 
         self.content_tabview = ctk.CTkTabview(content_section, height=300)
         self.content_tabview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -549,7 +627,7 @@ class Science2GoApp:
 
         # ── Statistics and File Info Section ──
         stats_section = ctk.CTkFrame(container, fg_color="transparent")
-        stats_section.pack(fill="x")
+        stats_section.pack(fill="x", padx=15)
 
         self.content_stats_var = tk.StringVar(value="No content loaded")
         ctk.CTkLabel(
@@ -571,25 +649,115 @@ class Science2GoApp:
         self.update_template_description()
 
     # ──────────────────────────────────────────────
-    #  Tab 3: Audio Config
+    #  Tab 4: MD to SSML (NEW)
+    # ──────────────────────────────────────────────
+
+    def create_md_to_ssml_tab(self, parent_frame):
+        """Create the MD to SSML tab with SSML conversion, editor, save/load"""
+        container = ctk.CTkScrollableFrame(parent_frame)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Title
+        ctk.CTkLabel(
+            container, text="SSML Conversion",
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(anchor="w", padx=15, pady=(10, 5))
+
+        ctk.CTkLabel(
+            container,
+            text="Convert AI-processed text to SSML markup for fine-grained voice control.\n"
+                 "Uses Gemini AI to add proper SSML tags (<p>, <s>, <break>, <emphasis>, <say-as>, etc.).",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        ).pack(anchor="w", padx=15, pady=(0, 15))
+
+        # ── Action Buttons ──
+        action_section = ctk.CTkFrame(container)
+        action_section.pack(fill="x", padx=15, pady=(0, 15))
+
+        action_frame = ctk.CTkFrame(action_section, fg_color="transparent")
+        action_frame.pack(fill="x", padx=10, pady=10)
+
+        self.ssml_convert_btn = ctk.CTkButton(
+            action_frame, text="Convert to SSML", width=160,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self.convert_md_to_ssml,
+        )
+        self.ssml_convert_btn.pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            action_frame, text="Load SSML", width=100,
+            command=self.load_ssml_file,
+        ).pack(side="left", padx=(0, 5))
+
+        ctk.CTkButton(
+            action_frame, text="Save SSML", width=100,
+            command=self.save_ssml_file,
+        ).pack(side="left", padx=(0, 5))
+
+        ctk.CTkButton(
+            action_frame, text="Clear", width=80,
+            command=self.clear_ssml_content,
+        ).pack(side="left")
+
+        self.ssml_status_label = ctk.CTkLabel(
+            action_frame, text="",
+            font=ctk.CTkFont(size=11, slant="italic"),
+        )
+        self.ssml_status_label.pack(side="left", padx=(15, 0))
+
+        # ── SSML Editor ──
+        editor_section = ctk.CTkFrame(container)
+        editor_section.pack(fill="x", padx=15, pady=(0, 15))
+
+        ctk.CTkLabel(
+            editor_section, text="SSML Content",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.ssml_text = ctk.CTkTextbox(
+            editor_section,
+            font=ctk.CTkFont(family="Consolas", size=11),
+            wrap="word", height=400,
+        )
+        self.ssml_text.pack(fill="both", expand=True, padx=10, pady=(0, 5))
+
+        ctk.CTkLabel(
+            editor_section,
+            text='Edit SSML directly. Supported tags: <speak>, <p>, <s>, <break>, '
+                 '<prosody>, <emphasis>, <say-as>',
+            font=ctk.CTkFont(size=10, slant="italic"),
+            text_color="gray",
+        ).pack(anchor="w", padx=10, pady=(0, 10))
+
+        # ── SSML Statistics ──
+        self.ssml_stats_var = tk.StringVar(value="No SSML content")
+        ctk.CTkLabel(
+            container, textvariable=self.ssml_stats_var,
+            font=ctk.CTkFont(size=10, slant="italic"),
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+    # ──────────────────────────────────────────────
+    #  Tab 5: Audio Config
     # ──────────────────────────────────────────────
 
     def create_audio_config_tab(self, parent_frame):
         """Create the Audio Configuration tab with voice selection, rate, format controls"""
-        container = ctk.CTkFrame(parent_frame, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=20, pady=15)
+        # Use CTkScrollableFrame to fix overflow on small windows
+        container = ctk.CTkScrollableFrame(parent_frame)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
 
         ctk.CTkLabel(
             container, text="Audio Generation Settings",
             font=ctk.CTkFont(size=18, weight="bold")
-        ).pack(anchor="w", pady=(0, 15))
+        ).pack(anchor="w", padx=15, pady=(10, 15))
 
         # ── Voice Selection Section ──
         voice_section = ctk.CTkFrame(container)
-        voice_section.pack(fill="x", pady=(0, 15))
+        voice_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
-            voice_section, text="Voice Selection (Chirp 3 HD)",
+            voice_section, text="Voice Selection",
             font=ctk.CTkFont(size=14, weight="bold")
         ).pack(anchor="w", padx=10, pady=(10, 5))
 
@@ -597,20 +765,31 @@ class Science2GoApp:
         voice_grid.pack(fill="x", padx=10, pady=(0, 10))
         voice_grid.grid_columnconfigure(1, weight=1)
 
+        # Voice model type selector
+        ctk.CTkLabel(voice_grid, text="Model:").grid(
+            row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        self.voice_model_var = tk.StringVar(value=VOICE_MODEL_CHIRP3_HD)
+        self.voice_model_combo = ctk.CTkComboBox(
+            voice_grid, variable=self.voice_model_var,
+            values=VOICE_MODELS, state="readonly", width=200,
+            command=self._on_model_changed
+        )
+        self.voice_model_combo.grid(row=0, column=1, sticky="w", pady=5)
+
         # Gender selector
         ctk.CTkLabel(voice_grid, text="Gender:").grid(
-            row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+            row=1, column=0, sticky="w", padx=(0, 10), pady=5)
         self.voice_gender_var = tk.StringVar(value="Male")
         gender_combo = ctk.CTkComboBox(
             voice_grid, variable=self.voice_gender_var,
             values=["Male", "Female"], state="readonly", width=150,
             command=self._on_gender_changed
         )
-        gender_combo.grid(row=0, column=1, sticky="w", pady=5)
+        gender_combo.grid(row=1, column=1, sticky="w", pady=5)
 
         # Voice name selector
         ctk.CTkLabel(voice_grid, text="Voice:").grid(
-            row=1, column=0, sticky="w", padx=(0, 10), pady=5)
+            row=2, column=0, sticky="w", padx=(0, 10), pady=5)
         self.voice_name_var = tk.StringVar(value="Charon")
         male_display = [voice_display_name(v) for v in CHIRP3_HD_MALE_VOICES]
         self.voice_name_combo = ctk.CTkComboBox(
@@ -618,21 +797,21 @@ class Science2GoApp:
             values=male_display if male_display else ["Charon"],
             state="readonly", width=250,
         )
-        self.voice_name_combo.grid(row=1, column=1, sticky="w", pady=5)
+        self.voice_name_combo.grid(row=2, column=1, sticky="w", pady=5)
 
         # Language/Locale
         ctk.CTkLabel(voice_grid, text="Locale:").grid(
-            row=2, column=0, sticky="w", padx=(0, 10), pady=5)
+            row=3, column=0, sticky="w", padx=(0, 10), pady=5)
         self.voice_locale_var = tk.StringVar(value="en-GB")
         locale_combo = ctk.CTkComboBox(
             voice_grid, variable=self.voice_locale_var,
             values=["en-GB", "en-US", "en-AU"], state="readonly", width=150,
         )
-        locale_combo.grid(row=2, column=1, sticky="w", pady=5)
+        locale_combo.grid(row=3, column=1, sticky="w", pady=5)
 
         # ── Speech Settings Section ──
         speech_section = ctk.CTkFrame(container)
-        speech_section.pack(fill="x", pady=(0, 15))
+        speech_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             speech_section, text="Speech Settings",
@@ -671,16 +850,41 @@ class Science2GoApp:
             font=ctk.CTkFont(size=10, slant="italic"), text_color="gray",
         ).grid(row=1, column=1, sticky="w", pady=(0, 5))
 
-        # Note about pitch
-        ctk.CTkLabel(
+        # Pitch slider (row 2-3, disabled by default for Chirp 3 HD)
+        ctk.CTkLabel(speech_grid, text="Pitch:").grid(
+            row=2, column=0, sticky="w", padx=(0, 10), pady=5)
+
+        pitch_frame = ctk.CTkFrame(speech_grid, fg_color="transparent")
+        pitch_frame.grid(row=2, column=1, sticky="ew", pady=5)
+
+        self.pitch_var = tk.DoubleVar(value=0.0)
+        self.pitch_slider = ctk.CTkSlider(
+            pitch_frame, from_=-20.0, to=20.0,
+            variable=self.pitch_var,
+            number_of_steps=40,
+            command=self._on_pitch_changed,
+            width=300,
+        )
+        self.pitch_slider.pack(side="left", padx=(0, 10))
+        self.pitch_slider.configure(state="disabled")  # Disabled for Chirp 3 HD
+
+        self.pitch_label = ctk.CTkLabel(
+            pitch_frame, text="0.0 st",
+            font=ctk.CTkFont(size=12, weight="bold"), width=60,
+        )
+        self.pitch_label.pack(side="left")
+
+        # Note about pitch availability
+        self.pitch_note_label = ctk.CTkLabel(
             speech_grid,
             text="Note: Pitch control is not available for Chirp 3 HD voices.",
             font=ctk.CTkFont(size=10, slant="italic"), text_color="gray",
-        ).grid(row=2, column=1, sticky="w", pady=(0, 5))
+        )
+        self.pitch_note_label.grid(row=3, column=1, sticky="w", pady=(0, 5))
 
         # ── Output Format Section ──
         format_section = ctk.CTkFrame(container)
-        format_section.pack(fill="x", pady=(0, 15))
+        format_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             format_section, text="Output Format",
@@ -727,7 +931,7 @@ class Science2GoApp:
 
         # ── Preview Section ──
         preview_section = ctk.CTkFrame(container)
-        preview_section.pack(fill="x", pady=(0, 15))
+        preview_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             preview_section, text="Voice Preview",
@@ -755,31 +959,31 @@ class Science2GoApp:
                 container,
                 text="Google Cloud TTS SDK not available. Install with: pip install google-cloud-texttospeech",
                 font=ctk.CTkFont(size=11, slant="italic"), text_color="orange",
-            ).pack(anchor="w", pady=(5, 0))
+            ).pack(anchor="w", padx=15, pady=(5, 0))
         elif audio_generator and not audio_generator.is_ready:
             ctk.CTkLabel(
                 container,
                 text="TTS client not initialized. Check Google Cloud credentials.",
                 font=ctk.CTkFont(size=11, slant="italic"), text_color="orange",
-            ).pack(anchor="w", pady=(5, 0))
+            ).pack(anchor="w", padx=15, pady=(5, 0))
 
     # ──────────────────────────────────────────────
-    #  Tab 4: Output Generation
+    #  Tab 6: Speech Output
     # ──────────────────────────────────────────────
 
-    def create_output_generation_tab(self, parent_frame):
-        """Create the Output Generation tab with generate button, progress, export"""
-        container = ctk.CTkFrame(parent_frame, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=20, pady=15)
+    def create_speech_output_tab(self, parent_frame):
+        """Create the Speech Output tab with generate button, progress, export"""
+        container = ctk.CTkScrollableFrame(parent_frame)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
 
         ctk.CTkLabel(
-            container, text="Audio Paper Generation",
+            container, text="Speech Synthesis & Output",
             font=ctk.CTkFont(size=18, weight="bold")
-        ).pack(anchor="w", pady=(0, 15))
+        ).pack(anchor="w", padx=15, pady=(10, 15))
 
         # ── Content Source Section ──
         source_section = ctk.CTkFrame(container)
-        source_section.pack(fill="x", pady=(0, 15))
+        source_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             source_section, text="Content Source",
@@ -789,7 +993,13 @@ class Science2GoApp:
         source_options = ctk.CTkFrame(source_section, fg_color="transparent")
         source_options.pack(fill="x", padx=10, pady=(0, 10))
 
-        self.content_source_var = tk.StringVar(value="processed")
+        self.content_source_var = tk.StringVar(value="ssml")
+
+        ctk.CTkRadioButton(
+            source_options, text="SSML content (from MD to SSML tab)",
+            variable=self.content_source_var, value="ssml",
+        ).pack(anchor="w", pady=2)
+
         ctk.CTkRadioButton(
             source_options, text="AI Processed text (from Markdown Processing tab)",
             variable=self.content_source_var, value="processed",
@@ -809,7 +1019,7 @@ class Science2GoApp:
 
         # ── Output Path Section ──
         output_section = ctk.CTkFrame(container)
-        output_section.pack(fill="x", pady=(0, 15))
+        output_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             output_section, text="Output File",
@@ -838,7 +1048,7 @@ class Science2GoApp:
 
         # ── Generate Button ──
         generate_section = ctk.CTkFrame(container)
-        generate_section.pack(fill="x", pady=(0, 15))
+        generate_section.pack(fill="x", padx=15, pady=(0, 15))
 
         gen_btn_frame = ctk.CTkFrame(generate_section, fg_color="transparent")
         gen_btn_frame.pack(fill="x", padx=10, pady=10)
@@ -870,7 +1080,7 @@ class Science2GoApp:
 
         # ── Results Section ──
         results_section = ctk.CTkFrame(container)
-        results_section.pack(fill="both", expand=True, pady=(0, 15))
+        results_section.pack(fill="x", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
             results_section, text="Generation Results",
@@ -934,7 +1144,78 @@ class Science2GoApp:
         self.progress_bar.set(0)
 
     # ══════════════════════════════════════════════
-    #  Paper Setup Tab Methods
+    #  Tab 1: Paper Information Methods
+    # ══════════════════════════════════════════════
+
+    def generate_description(self):
+        """Generate audio paper description"""
+        title = self.title_text.get("0.0", "end").strip()
+        authors = self.authors_var.get().strip()
+        journal = self.journal_var.get().strip()
+        year = self.year_var.get().strip()
+        doi = self.doi_var.get().strip()
+
+        if not title:
+            messagebox.showwarning("Missing Information",
+                                   "Please enter a paper title first.")
+            return
+
+        # Build audio paper description
+        description_parts = []
+        description_parts.append(f'This is an audio version of the paper "{title}"')
+
+        if authors:
+            description_parts.append(f" by {authors}")
+
+        if year and journal:
+            description_parts.append(f", published {year} in {journal}")
+        elif journal:
+            description_parts.append(f", published in {journal}")
+        elif year:
+            description_parts.append(f", published in {year}")
+
+        description_parts.append(".")
+
+        if doi:
+            description_parts.append(
+                f"\n\nThe original paper can be found at: https://doi.org/{doi}"
+            )
+
+        if hasattr(self, 'pdf_metadata') and self.pdf_metadata.get('license'):
+            license_info = self.pdf_metadata['license']
+            description_parts.append(
+                f"\n\nThe original work is published under {license_info}."
+            )
+            if 'creativecommons.org' in license_info.lower():
+                description_parts.append(
+                    " For license details, visit: "
+                    "https://creativecommons.org/licenses/"
+                )
+
+        description_parts.append(
+            "\n\nThis audio version is a derivative work created for "
+            "accessibility and educational purposes. It preserves the "
+            "original scientific content while optimizing the text for "
+            "audio consumption."
+        )
+
+        description_parts.append(
+            "\n\nGenerated by Science2Go - Turn Academic Papers into Audio Papers"
+        )
+        description_parts.append("\nhttps://github.com/biterik/science2go")
+
+        description_text = "".join(description_parts)
+
+        # Display in description preview
+        self.description_text.configure(state="normal")
+        self.description_text.delete("0.0", "end")
+        self.description_text.insert("0.0", description_text)
+        self.description_text.configure(state="disabled")
+
+        self.status_var.set("Audio paper description generated")
+
+    # ══════════════════════════════════════════════
+    #  Tab 2: PDF to Markdown Methods
     # ══════════════════════════════════════════════
 
     def browse_pdf(self):
@@ -1126,13 +1407,20 @@ class Science2GoApp:
             markdown_text = result['markdown']
             self.converted_markdown = markdown_text
 
-            # Auto-populate Tab 2's source_text
+            # Populate Tab 2 markdown preview
+            self.md_preview_text.configure(state="normal")
+            self.md_preview_text.delete("0.0", "end")
+            self.md_preview_text.insert("0.0", markdown_text)
+            self.md_preview_text.configure(state="disabled")
+
+            # Also populate Tab 3 source text
             self.source_text.configure(state="normal")
             self.source_text.delete("0.0", "end")
             self.source_text.insert("0.0", markdown_text)
             self.source_text.configure(state="disabled")
 
             # Update statistics
+            self.update_md_preview_stats()
             self.update_content_statistics()
 
             # Update status
@@ -1144,15 +1432,12 @@ class Science2GoApp:
             )
             self.status_var.set("PDF converted to Markdown successfully")
 
-            # Switch to Markdown Processing tab
-            self.tabview.set("Markdown Processing")
-
             messagebox.showinfo(
                 "Conversion Complete",
                 f"PDF converted to Markdown successfully!\n\n"
                 f"Words extracted: {word_count:,}\n\n"
-                f"The content has been loaded into the Markdown Processing tab.\n"
-                f"You can now click 'Process with AI' to optimize it for audio."
+                f"The content is shown in the preview below.\n"
+                f"Switch to the Markdown Processing tab to process it with AI."
             )
         else:
             error = result.get('error', 'Unknown error')
@@ -1163,78 +1448,24 @@ class Science2GoApp:
                 f"Failed to convert PDF to Markdown:\n\n{error}"
             )
 
-    # ── Generate Description ──
+    def update_md_preview_stats(self):
+        """Update markdown preview statistics"""
+        self.md_preview_text.configure(state="normal")
+        content = self.md_preview_text.get("0.0", "end").strip()
+        self.md_preview_text.configure(state="disabled")
 
-    def generate_description(self):
-        """Generate audio paper description"""
-        title = self.title_text.get("0.0", "end").strip()
-        authors = self.authors_var.get().strip()
-        journal = self.journal_var.get().strip()
-        year = self.year_var.get().strip()
-        doi = self.doi_var.get().strip()
-
-        if not title:
-            messagebox.showwarning("Missing Information",
-                                   "Please enter a paper title first.")
-            return
-
-        # Build audio paper description
-        description_parts = []
-        description_parts.append(f'This is an audio version of the paper "{title}"')
-
-        if authors:
-            description_parts.append(f" by {authors}")
-
-        if year and journal:
-            description_parts.append(f", published {year} in {journal}")
-        elif journal:
-            description_parts.append(f", published in {journal}")
-        elif year:
-            description_parts.append(f", published in {year}")
-
-        description_parts.append(".")
-
-        if doi:
-            description_parts.append(
-                f"\n\nThe original paper can be found at: https://doi.org/{doi}"
+        if content:
+            words = len(content.split())
+            chars = len(content)
+            # Rough page estimate (~250 words/page)
+            pages = max(1, words // 250)
+            self.md_preview_stats_var.set(
+                f"{words:,} words | {chars:,} characters | ~{pages} pages"
             )
+        else:
+            self.md_preview_stats_var.set("No markdown loaded")
 
-        if hasattr(self, 'pdf_metadata') and self.pdf_metadata.get('license'):
-            license_info = self.pdf_metadata['license']
-            description_parts.append(
-                f"\n\nThe original work is published under {license_info}."
-            )
-            if 'creativecommons.org' in license_info.lower():
-                description_parts.append(
-                    " For license details, visit: "
-                    "https://creativecommons.org/licenses/"
-                )
-
-        description_parts.append(
-            "\n\nThis audio version is a derivative work created for "
-            "accessibility and educational purposes. It preserves the "
-            "original scientific content while optimizing the text for "
-            "audio consumption."
-        )
-
-        description_parts.append(
-            "\n\nGenerated by Science2Go - Turn Academic Papers into Audio Papers"
-        )
-        description_parts.append("\nhttps://github.com/biterik/science2go")
-
-        description_text = "".join(description_parts)
-
-        # Display in description preview
-        self.description_text.configure(state="normal")
-        self.description_text.delete("0.0", "end")
-        self.description_text.insert("0.0", description_text)
-        self.description_text.configure(state="disabled")
-
-        self.status_var.set("Audio paper description generated")
-
-    # ══════════════════════════════════════════════
-    #  Markdown Processing Tab Methods
-    # ══════════════════════════════════════════════
+    # ── Markdown File Operations ──
 
     def browse_markdown_file(self):
         """Browse for markdown file"""
@@ -1253,13 +1484,20 @@ class Science2GoApp:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # Display in source tab
+            # Display in Tab 2 preview
+            self.md_preview_text.configure(state="normal")
+            self.md_preview_text.delete("0.0", "end")
+            self.md_preview_text.insert("0.0", content)
+            self.md_preview_text.configure(state="disabled")
+
+            # Also display in Tab 3 source tab
             self.source_text.configure(state="normal")
             self.source_text.delete("0.0", "end")
             self.source_text.insert("0.0", content)
             self.source_text.configure(state="disabled")
 
             # Update statistics and file info
+            self.update_md_preview_stats()
             self.update_content_statistics()
             self.update_file_info()
 
@@ -1271,9 +1509,16 @@ class Science2GoApp:
 
     def save_source_markdown(self):
         """Save the raw source markdown to a file"""
-        self.source_text.configure(state="normal")
-        source_content = self.source_text.get("0.0", "end").strip()
-        self.source_text.configure(state="disabled")
+        # Get content from Tab 2 preview (or Tab 3 source)
+        self.md_preview_text.configure(state="normal")
+        source_content = self.md_preview_text.get("0.0", "end").strip()
+        self.md_preview_text.configure(state="disabled")
+
+        if not source_content:
+            # Fall back to Tab 3 source
+            self.source_text.configure(state="normal")
+            source_content = self.source_text.get("0.0", "end").strip()
+            self.source_text.configure(state="disabled")
 
         if not source_content:
             messagebox.showwarning("No Content",
@@ -1383,7 +1628,13 @@ class Science2GoApp:
                 except (json.JSONDecodeError, ValueError):
                     pass
 
-            # Load into source text widget
+            # Load into Tab 2 preview
+            self.md_preview_text.configure(state="normal")
+            self.md_preview_text.delete("0.0", "end")
+            self.md_preview_text.insert("0.0", source_content)
+            self.md_preview_text.configure(state="disabled")
+
+            # Also load into Tab 3 source text widget
             self.source_text.configure(state="normal")
             self.source_text.delete("0.0", "end")
             self.source_text.insert("0.0", source_content)
@@ -1392,11 +1643,9 @@ class Science2GoApp:
             # Track file and update UI
             self.current_source_file = file_path
             self.markdown_path_var.set(file_path)
+            self.update_md_preview_stats()
             self.update_content_statistics()
             self.update_file_info()
-
-            # Switch to source content tab
-            self.content_tabview.set("Source Content")
 
             self.status_var.set(
                 f"Source markdown loaded: {Path(file_path).name}"
@@ -1405,6 +1654,10 @@ class Science2GoApp:
         except Exception as e:
             messagebox.showerror("Load Error",
                                  f"Failed to load source markdown:\n{str(e)}")
+
+    # ══════════════════════════════════════════════
+    #  Tab 3: Markdown Processing Methods
+    # ══════════════════════════════════════════════
 
     def save_processed_text(self):
         """Save AI-processed text to file"""
@@ -1555,7 +1808,9 @@ class Science2GoApp:
 
     def get_processing_stats(self):
         """Get current processing statistics"""
+        self.source_text.configure(state="normal")
         source_content = self.source_text.get("0.0", "end").strip()
+        self.source_text.configure(state="disabled")
         processed_content = self.processed_text.get("0.0", "end").strip()
 
         stats = {
@@ -1779,17 +2034,282 @@ class Science2GoApp:
         self.content_stats_var.set(stats_text)
 
     # ══════════════════════════════════════════════
-    #  Audio Config Tab Methods
+    #  Tab 4: MD to SSML Methods
     # ══════════════════════════════════════════════
 
-    def _on_gender_changed(self, choice=None):
-        """Update voice list when gender changes"""
-        gender = self.voice_gender_var.get()
-        if gender == "Male":
-            voices = [voice_display_name(v) for v in CHIRP3_HD_MALE_VOICES]
-        else:
-            voices = [voice_display_name(v) for v in CHIRP3_HD_FEMALE_VOICES]
+    def convert_md_to_ssml(self):
+        """Convert processed markdown to SSML using Gemini AI with SSML Converter template"""
+        if not TEXT_PROCESSOR_AVAILABLE:
+            messagebox.showerror(
+                "Error",
+                "Text processor not available.\n"
+                "Please check Gemini AI configuration."
+            )
+            return
 
+        # Get processed content from Tab 3
+        processed_content = self.processed_text.get("0.0", "end").strip()
+
+        if not processed_content:
+            messagebox.showwarning(
+                "No Content",
+                "No processed content available.\n"
+                "Process your markdown in the Markdown Processing tab first."
+            )
+            return
+
+        # Check content length
+        if len(processed_content) > 1000000:
+            if not messagebox.askyesno(
+                "Large Content",
+                f"Content is quite large ({len(processed_content):,} chars). "
+                "SSML conversion may take several minutes. Continue?"
+            ):
+                return
+
+        # Start SSML conversion
+        self.ssml_convert_btn.configure(state="disabled", text="Converting...")
+        self.ssml_status_label.configure(text="Converting to SSML with Gemini AI...")
+        self.progress_bar.start()
+
+        def ssml_thread():
+            try:
+                result = process_markdown_content(
+                    processed_content, "SSML Converter"
+                )
+                self.root.after(
+                    0, lambda: self._handle_ssml_result(result)
+                )
+            except Exception as e:
+                error_msg = f"SSML conversion failed: {str(e)}"
+                self.root.after(
+                    0, lambda: self._handle_ssml_error(error_msg)
+                )
+
+        threading.Thread(target=ssml_thread, daemon=True).start()
+
+    def _handle_ssml_result(self, result):
+        """Handle SSML conversion result"""
+        self.progress_bar.stop()
+        self.progress_bar.set(0)
+        self.ssml_convert_btn.configure(state="normal", text="Convert to SSML")
+
+        if result and result.get('success', False):
+            ssml_content = result.get('processed_content', '')
+
+            # Populate SSML editor
+            self.ssml_text.delete("0.0", "end")
+            self.ssml_text.insert("0.0", ssml_content)
+
+            # Update statistics
+            self.update_ssml_statistics()
+
+            processing_time = result.get('processing_time', 0)
+            self.ssml_status_label.configure(
+                text=f"Converted in {processing_time:.1f}s"
+            )
+            self.status_var.set("SSML conversion completed successfully")
+
+            messagebox.showinfo(
+                "SSML Conversion Complete",
+                f"Content converted to SSML successfully!\n\n"
+                f"Processing time: {processing_time:.1f} seconds\n\n"
+                f"You can review and edit the SSML before generating audio.\n"
+                f"Use 'Save SSML' to save for later use."
+            )
+        else:
+            error_msg = (result.get('error', 'Unknown error')
+                         if result else 'No result returned')
+            self._handle_ssml_error(f"SSML conversion failed: {error_msg}")
+
+    def _handle_ssml_error(self, error_msg):
+        """Handle SSML conversion error"""
+        self.progress_bar.stop()
+        self.progress_bar.set(0)
+        self.ssml_convert_btn.configure(state="normal", text="Convert to SSML")
+        self.ssml_status_label.configure(text="Conversion failed")
+        self.status_var.set(f"SSML conversion error: {error_msg}")
+
+        messagebox.showerror(
+            "SSML Conversion Failed",
+            f"Failed to convert content to SSML:\n\n{error_msg}"
+        )
+
+    def save_ssml_file(self):
+        """Save SSML content to file"""
+        ssml_content = self.ssml_text.get("0.0", "end").strip()
+        if not ssml_content:
+            messagebox.showwarning("No Content", "No SSML content to save.")
+            return
+
+        # Generate default filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"ssml_{timestamp}.xml"
+
+        file_path = filedialog.asksaveasfilename(
+            title="Save SSML File",
+            defaultextension=".xml",
+            initialfile=default_filename,
+            initialdir=config.projects_dir,
+            filetypes=[
+                ("SSML/XML files", "*.xml"),
+                ("SSML files", "*.ssml"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*"),
+            ]
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Prepare metadata header
+            metadata = {
+                "saved_at": datetime.now().isoformat(),
+                "content_type": "ssml",
+                "source_processed_file": self.current_processed_file,
+                "paper_info": {
+                    "title": self.title_text.get("0.0", "end").strip(),
+                    "authors": self.authors_var.get(),
+                }
+            }
+
+            content_with_metadata = (
+                f"<!--\nScience2Go SSML Content\n"
+                f"{json.dumps(metadata, indent=2)}\n-->\n\n"
+                f"{ssml_content}"
+            )
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content_with_metadata)
+
+            self.current_ssml_file = file_path
+            self.status_var.set(f"SSML saved: {Path(file_path).name}")
+            messagebox.showinfo("Saved", f"SSML saved to:\n{file_path}")
+
+        except Exception as e:
+            messagebox.showerror("Save Error",
+                                 f"Failed to save SSML:\n{str(e)}")
+
+    def load_ssml_file(self):
+        """Load SSML content from file"""
+        file_path = filedialog.askopenfilename(
+            title="Load SSML File",
+            initialdir=config.projects_dir,
+            filetypes=[
+                ("SSML/XML files", "*.xml"),
+                ("SSML files", "*.ssml"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*"),
+            ]
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Strip metadata header if present
+            ssml_content = content
+            if content.startswith('<!--\nScience2Go SSML Content\n'):
+                metadata_end = content.find('-->')
+                if metadata_end != -1:
+                    ssml_content = content[metadata_end + 3:].strip()
+
+            # Load into SSML editor
+            self.ssml_text.delete("0.0", "end")
+            self.ssml_text.insert("0.0", ssml_content)
+
+            self.current_ssml_file = file_path
+            self.update_ssml_statistics()
+
+            self.status_var.set(f"SSML loaded: {Path(file_path).name}")
+            messagebox.showinfo("Loaded",
+                                f"SSML loaded from:\n{Path(file_path).name}")
+
+        except Exception as e:
+            messagebox.showerror("Load Error",
+                                 f"Failed to load SSML:\n{str(e)}")
+
+    def clear_ssml_content(self):
+        """Clear SSML editor"""
+        self.ssml_text.delete("0.0", "end")
+        self.current_ssml_file = None
+        self.ssml_stats_var.set("No SSML content")
+        self.ssml_status_label.configure(text="")
+        self.status_var.set("SSML content cleared")
+
+    def update_ssml_statistics(self):
+        """Update SSML character count and chunk estimate"""
+        ssml_content = self.ssml_text.get("0.0", "end").strip()
+
+        if not ssml_content:
+            self.ssml_stats_var.set("No SSML content")
+            return
+
+        char_count = len(ssml_content)
+        byte_count = len(ssml_content.encode('utf-8'))
+
+        # Estimate chunks based on MAX_TTS_BYTES (~4500)
+        max_bytes = 4500
+        estimated_chunks = max(1, (byte_count // max_bytes) + (1 if byte_count % max_bytes else 0))
+
+        # Validate SSML structure
+        stripped = ssml_content.strip()
+        is_valid = stripped.startswith('<speak>') and stripped.endswith('</speak>')
+        validation_status = "✓ Valid SSML structure" if is_valid else "⚠ Missing <speak> wrapper"
+
+        stats_text = (
+            f"Characters: {char_count:,} | Bytes: {byte_count:,} | "
+            f"Est. chunks: {estimated_chunks} | {validation_status}"
+        )
+        self.ssml_stats_var.set(stats_text)
+
+    # ══════════════════════════════════════════════
+    #  Tab 5: Audio Config Methods
+    # ══════════════════════════════════════════════
+
+    def _on_model_changed(self, choice=None):
+        """Update voice list and pitch controls when voice model changes."""
+        model = self.voice_model_var.get()
+
+        # Update pitch controls (guard against early calls during widget init)
+        if hasattr(self, 'pitch_note_label'):
+            if model == VOICE_MODEL_NEURAL2:
+                self.pitch_note_label.configure(
+                    text="Pitch adjustment available for Neural2 voices (-20 to +20 semitones)."
+                )
+                self.pitch_slider.configure(state="normal")
+            else:
+                self.pitch_note_label.configure(
+                    text="Note: Pitch control is not available for Chirp 3 HD voices."
+                )
+                self.pitch_slider.configure(state="disabled")
+                self.pitch_var.set(0.0)
+                self.pitch_label.configure(text="0.0 st")
+
+        # Refresh the voice list for the new model + current gender
+        self._on_gender_changed()
+
+    def _on_gender_changed(self, choice=None):
+        """Update voice list when gender or model changes."""
+        gender = self.voice_gender_var.get()
+        model = self.voice_model_var.get()
+
+        if model == VOICE_MODEL_NEURAL2:
+            if gender == "Male":
+                voice_list = NEURAL2_MALE_VOICES
+            else:
+                voice_list = NEURAL2_FEMALE_VOICES
+        else:
+            if gender == "Male":
+                voice_list = CHIRP3_HD_MALE_VOICES
+            else:
+                voice_list = CHIRP3_HD_FEMALE_VOICES
+
+        voices = [voice_display_name(v) for v in voice_list]
         if voices:
             self.voice_name_combo.configure(values=voices)
             self.voice_name_var.set(voices[0])
@@ -1799,11 +2319,17 @@ class Science2GoApp:
         rate = self.speaking_rate_var.get()
         self.rate_label.configure(text=f"{rate:.2f}x")
 
+    def _on_pitch_changed(self, value=None):
+        """Update pitch display label"""
+        pitch = self.pitch_var.get()
+        self.pitch_label.configure(text=f"{pitch:.1f} st")
+
     def _get_full_voice_name(self) -> str:
         """Build full voice name from current UI selections."""
         display = self.voice_name_var.get()
         locale = self.voice_locale_var.get()
-        return f"{locale}-Chirp3-HD-{display}"
+        model = self.voice_model_var.get()
+        return voice_full_name(display, locale, model)
 
     def _apply_audio_settings(self):
         """Apply current UI settings to the audio generator instance."""
@@ -1815,6 +2341,7 @@ class Science2GoApp:
         audio_generator.audio_format = self.audio_format_var.get()
         audio_generator.bitrate = self.bitrate_var.get()
         audio_generator.normalize_audio = self.normalize_var.get()
+        audio_generator.pitch_semitones = self.pitch_var.get()
 
     def preview_voice(self):
         """Generate a short voice preview"""
@@ -1894,7 +2421,7 @@ class Science2GoApp:
         messagebox.showerror("Preview Error", msg)
 
     # ══════════════════════════════════════════════
-    #  Output Generation Tab Methods
+    #  Tab 6: Speech Output Methods
     # ══════════════════════════════════════════════
 
     def browse_output_path(self):
@@ -1966,17 +2493,28 @@ class Science2GoApp:
 
         # Get content based on source selection
         source = self.content_source_var.get()
-        if source == "processed":
+
+        if source == "ssml":
+            content = self.ssml_text.get("0.0", "end").strip()
+            if not content:
+                messagebox.showwarning(
+                    "No Content",
+                    "No SSML content available.\n"
+                    "Convert your processed text to SSML in the MD to SSML tab first,\n"
+                    "or select a different content source."
+                )
+                return
+        elif source == "processed":
             content = self.processed_text.get("0.0", "end").strip()
             if not content:
                 messagebox.showwarning(
                     "No Content",
                     "No processed content available.\n"
                     "Process your text in the Markdown Processing tab first,\n"
-                    "or select 'Source markdown' as content source."
+                    "or select a different content source."
                 )
                 return
-        else:
+        else:  # source == "source"
             self.source_text.configure(state="normal")
             content = self.source_text.get("0.0", "end").strip()
             self.source_text.configure(state="disabled")
@@ -1992,7 +2530,27 @@ class Science2GoApp:
         if self.include_description_var.get():
             desc = self.description_text.get("0.0", "end").strip()
             if desc:
-                content = desc + "\n\n[pause long]\n\n" + content
+                if is_ssml_content(content):
+                    # For SSML content: wrap the description as SSML and insert
+                    # inside the existing <speak> wrapper
+                    desc_escaped = (desc
+                        .replace('&', '&amp;')
+                        .replace('<', '&lt;')
+                        .replace('>', '&gt;')
+                        .replace('"', '&quot;')
+                        .replace("'", '&apos;'))
+                    desc_ssml = (
+                        f'<p><s>{desc_escaped}</s></p>\n'
+                        f'<break time="1500ms"/>\n'
+                    )
+                    content = re.sub(
+                        r'(<speak\s*>)',
+                        r'\1\n' + desc_ssml,
+                        content,
+                        count=1,
+                    )
+                else:
+                    content = desc + "\n\n[pause long]\n\n" + content
 
         # Get output path
         output_path = self.output_path_var.get()

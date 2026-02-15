@@ -1,12 +1,13 @@
 """
 Science2Go Audio Generator
-Google Cloud TTS wrapper with Chirp 3 HD support, text chunking,
+Google Cloud TTS wrapper with Chirp 3 HD + Neural2 support, SSML-aware chunking,
 audio concatenation (pydub), normalization, and MP3/M4B metadata (mutagen).
 """
 
 import os
 import re
 import time
+import logging
 import tempfile
 import struct
 from pathlib import Path
@@ -46,6 +47,59 @@ except ImportError:
     print("Warning: mutagen not installed. Install with: pip install mutagen")
 
 
+# ── Logging setup ──
+
+def _setup_logger() -> logging.Logger:
+    """Configure logger with console and file handlers."""
+    _logger = logging.getLogger('science2go.audio_generator')
+
+    # Avoid duplicate handlers if module is reloaded
+    if _logger.handlers:
+        return _logger
+
+    # Try to read log level from config; fall back to INFO
+    try:
+        from src.config.settings import config
+        level_name = config.log_level.upper()
+    except Exception:
+        level_name = "INFO"
+
+    level = getattr(logging, level_name, logging.INFO)
+    _logger.setLevel(level)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    console_fmt = logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    console_handler.setFormatter(console_fmt)
+    _logger.addHandler(console_handler)
+
+    # File handler
+    try:
+        from src.config.settings import config as _cfg
+        log_dir = _cfg.output_dir / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(
+            log_dir / 'audio_generator.log', encoding='utf-8'
+        )
+        file_handler.setLevel(logging.DEBUG)  # Always capture everything to file
+        file_fmt = logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(file_fmt)
+        _logger.addHandler(file_handler)
+    except Exception as e:
+        _logger.warning(f"Could not create file handler: {e}")
+
+    return _logger
+
+logger = _setup_logger()
+
+
 # ── Constants ──
 
 # TTS API limit: 5000 bytes per request (for ASCII English ~5000 chars)
@@ -64,6 +118,12 @@ DEFAULT_ENCODING = "MP3"
 # Audio format options
 AUDIO_FORMATS = ["MP3", "WAV", "OGG", "M4B"]
 BITRATE_OPTIONS = ["64k", "96k", "128k", "192k", "256k", "320k"]
+
+# ── Voice model types ──
+
+VOICE_MODEL_CHIRP3_HD = "Chirp 3 HD"
+VOICE_MODEL_NEURAL2 = "Neural2"
+VOICE_MODELS = [VOICE_MODEL_CHIRP3_HD, VOICE_MODEL_NEURAL2]
 
 # Available Chirp 3 HD voices for en-GB (male)
 CHIRP3_HD_MALE_VOICES = [
@@ -105,6 +165,19 @@ CHIRP3_HD_FEMALE_VOICES = [
 
 ALL_CHIRP3_HD_VOICES = CHIRP3_HD_MALE_VOICES + CHIRP3_HD_FEMALE_VOICES
 
+# Available Neural2 voices for en-GB
+NEURAL2_MALE_VOICES = [
+    "en-GB-Neural2-D",
+]
+
+NEURAL2_FEMALE_VOICES = [
+    "en-GB-Neural2-A",
+    "en-GB-Neural2-C",
+    "en-GB-Neural2-F",
+]
+
+ALL_NEURAL2_VOICES = NEURAL2_MALE_VOICES + NEURAL2_FEMALE_VOICES
+
 # Voice display names (strip the locale prefix for UI)
 def voice_display_name(full_name: str) -> str:
     """Extract display name from full voice name, e.g. 'Charon' from 'en-GB-Chirp3-HD-Charon'."""
@@ -112,12 +185,32 @@ def voice_display_name(full_name: str) -> str:
     return parts[-1] if parts else full_name
 
 
-def voice_full_name(display_name: str, language: str = DEFAULT_LANGUAGE) -> str:
-    """Build full voice name from display name, e.g. 'Charon' -> 'en-GB-Chirp3-HD-Charon'."""
+def voice_full_name(display_name: str, language: str = DEFAULT_LANGUAGE,
+                    model: str = VOICE_MODEL_CHIRP3_HD) -> str:
+    """Build full voice name from display name and model type.
+
+    Chirp 3 HD: 'Charon' -> 'en-GB-Chirp3-HD-Charon'
+    Neural2:    'D'      -> 'en-GB-Neural2-D'
+    """
+    if model == VOICE_MODEL_NEURAL2:
+        return f"{language}-Neural2-{display_name}"
     return f"{language}-Chirp3-HD-{display_name}"
 
 
-# ── Text chunking for TTS ──
+# ── SSML Detection ──
+
+def is_ssml_content(text: str) -> bool:
+    """Detect whether the input text is SSML by checking for a <speak> root tag."""
+    stripped = text.strip()
+    # Skip leading XML comment if present (<!-- metadata ... -->)
+    if stripped.startswith('<!--'):
+        comment_end = stripped.find('-->')
+        if comment_end != -1:
+            stripped = stripped[comment_end + 3:].strip()
+    return stripped.startswith('<speak>')
+
+
+# ── Text chunking for TTS (plain text) ──
 
 def chunk_text_for_tts(text: str, max_bytes: int = MAX_TTS_BYTES) -> List[Dict[str, Any]]:
     """
@@ -224,6 +317,353 @@ def _force_split(text: str, max_bytes: int) -> List[str]:
     return parts
 
 
+# ── SSML sanitization and chunking for TTS ──
+
+# Tags supported by Google Cloud TTS SSML
+_SUPPORTED_SSML_TAGS = {'speak', 'break', 'say-as', 'sub', 'emphasis',
+                        'prosody', 'p', 's', 'phoneme', 'mark',
+                        'par', 'seq', 'media', 'audio'}
+
+
+def _sanitize_ssml(ssml: str) -> str:
+    """Remove SSML tags not supported by Google Cloud TTS and fix common XML errors.
+
+    1. Strips unsupported tags (keeps their text content).
+    2. Escapes bare ``&`` characters that aren't already XML entities.
+    3. Escapes stray ``<`` / ``>`` in text content (not part of tags).
+    4. Removes any remaining non-XML-safe characters.
+    """
+    # ── Step 1: strip unsupported tags ──
+    def _strip_unsupported(match):
+        tag_name = match.group(1).split()[0]  # handle <tag attr="...">
+        if tag_name.lower() in _SUPPORTED_SSML_TAGS:
+            return match.group(0)  # keep supported tag
+        logger.debug(f"Stripping unsupported SSML tag: <{tag_name}>")
+        return ''  # remove unsupported tag
+
+    # Strip opening tags: <tagname ...>
+    result = re.sub(r'<([a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>', _strip_unsupported, ssml)
+    # Strip closing tags: </tagname>
+    result = re.sub(r'</([a-zA-Z][a-zA-Z0-9_-]*)>', _strip_unsupported, result)
+
+    # ── Step 2: fix bare & characters ──
+    # Match & that is NOT already part of a named or numeric XML entity
+    result = re.sub(r'&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);)', '&amp;', result)
+
+    # ── Step 3: remove control characters that XML forbids ──
+    # XML 1.0 allows: #x9 | #xA | #xD | [#x20-#xD7FF]
+    result = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', result)
+
+    return result
+
+
+def _validate_ssml_chunk(ssml_chunk: str) -> str:
+    """Validate and repair a single SSML chunk before sending to TTS.
+
+    Attempts to parse the chunk as XML. If parsing fails, tries common
+    repairs (close unclosed tags, fix entities). Returns the repaired
+    chunk, or raises ValueError if unfixable.
+    """
+    import xml.etree.ElementTree as ET
+
+    # First try parsing as-is
+    try:
+        ET.fromstring(ssml_chunk)
+        return ssml_chunk  # Already valid
+    except ET.ParseError as original_error:
+        logger.debug(f"SSML validation failed, attempting repair: {original_error}")
+
+    repaired = ssml_chunk
+
+    # Repair 1: fix bare ampersands again (might have been missed)
+    repaired = re.sub(r'&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);)', '&amp;', repaired)
+
+    # Repair 2: remove stray < > that aren't part of valid tags
+    # A stray < not followed by a valid tag-name-start or / is text content
+    repaired = re.sub(r'<(?![a-zA-Z/!])', '&lt;', repaired)
+    # A stray > not preceded by a tag close or self-close pattern
+    # (This is trickier; we do a simple check: if > appears outside tags)
+
+    # Repair 3: remove empty emphasis/prosody/say-as tags that might trip up TTS
+    repaired = re.sub(r'<(emphasis|prosody|say-as)[^>]*/>', '', repaired)
+
+    # Try parsing again
+    try:
+        ET.fromstring(repaired)
+        logger.info("SSML chunk repaired successfully")
+        return repaired
+    except ET.ParseError as e:
+        # Log the problematic content for debugging
+        logger.error(f"SSML chunk unfixable: {e}")
+        logger.debug(f"Problematic SSML (first 500 chars): {repaired[:500]}")
+
+        # Last resort: strip ALL SSML tags and wrap in minimal valid SSML
+        text_only = re.sub(r'<[^>]+>', ' ', repaired)
+        text_only = re.sub(r'\s+', ' ', text_only).strip()
+        fallback = f"<speak><p><s>{text_only}</s></p></speak>"
+        logger.warning("Falling back to plain text in <speak> wrapper")
+        return fallback
+
+
+SSML_WRAPPER_OVERHEAD = len('<speak></speak>') + 2  # 17 bytes with newlines
+
+
+def chunk_ssml_for_tts(ssml: str, max_bytes: int = MAX_TTS_BYTES) -> List[Dict[str, Any]]:
+    """
+    Split SSML content into chunks that fit within the TTS byte limit.
+    Splits at </p> paragraph boundaries, preserving valid XML structure.
+    Each chunk is wrapped in <speak>...</speak>.
+
+    Returns list of dicts with 'text' (containing SSML), 'index',
+    'is_section_start' keys.
+    """
+    if not ssml or not ssml.strip():
+        return []
+
+    # Sanitize: remove unsupported tags before chunking
+    ssml = _sanitize_ssml(ssml)
+
+    stripped = ssml.strip()
+
+    # Remove leading XML comment if present
+    if stripped.startswith('<!--'):
+        comment_end = stripped.find('-->')
+        if comment_end != -1:
+            stripped = stripped[comment_end + 3:].strip()
+
+    # Strip outer <speak>...</speak> wrapper
+    if stripped.startswith('<speak>'):
+        stripped = stripped[len('<speak>'):]
+    if stripped.endswith('</speak>'):
+        stripped = stripped[:-len('</speak>')]
+    stripped = stripped.strip()
+
+    # Split into logical blocks at paragraph boundaries
+    blocks = _split_ssml_into_blocks(stripped)
+    logger.debug(f"SSML split into {len(blocks)} blocks")
+
+    if not blocks:
+        # Fallback: treat entire content as one chunk
+        wrapped = f"<speak>{stripped}</speak>"
+        if len(wrapped.encode('utf-8')) <= max_bytes:
+            return [{'text': wrapped, 'index': 0, 'is_section_start': False}]
+        else:
+            # Force fallback to sentence splitting
+            return _chunk_ssml_by_sentences(stripped, max_bytes)
+
+    effective_limit = max_bytes - SSML_WRAPPER_OVERHEAD
+    chunks = []
+    current_block_content = ""
+    chunk_index = 0
+
+    for block in blocks:
+        block_bytes = len(block.encode('utf-8'))
+        current_bytes = len(current_block_content.encode('utf-8'))
+
+        # Check if adding this block would exceed the limit
+        test_content = (current_block_content + "\n" + block).strip() if current_block_content else block
+        if current_block_content and len(test_content.encode('utf-8')) > effective_limit:
+            # Flush current accumulator as a chunk
+            chunk_ssml = f"<speak>\n{current_block_content.strip()}\n</speak>"
+            is_section = _ssml_block_is_section_start(current_block_content)
+            chunks.append({
+                'text': chunk_ssml,
+                'index': chunk_index,
+                'is_section_start': is_section,
+            })
+            logger.debug(f"SSML chunk {chunk_index}: {len(chunk_ssml.encode('utf-8'))} bytes")
+            chunk_index += 1
+            current_block_content = ""
+
+        # Check if a single block exceeds the limit
+        if block_bytes > effective_limit:
+            # Flush any accumulated content first
+            if current_block_content.strip():
+                chunk_ssml = f"<speak>\n{current_block_content.strip()}\n</speak>"
+                chunks.append({
+                    'text': chunk_ssml,
+                    'index': chunk_index,
+                    'is_section_start': _ssml_block_is_section_start(current_block_content),
+                })
+                logger.debug(f"SSML chunk {chunk_index}: {len(chunk_ssml.encode('utf-8'))} bytes")
+                chunk_index += 1
+                current_block_content = ""
+
+            # Split this oversized block at </s> boundaries
+            logger.debug(f"Oversized block ({block_bytes} bytes), splitting by sentences")
+            sub_chunks = _chunk_ssml_paragraph_by_sentences(block, effective_limit)
+            for sub in sub_chunks:
+                chunk_ssml = f"<speak>\n{sub.strip()}\n</speak>"
+                chunks.append({
+                    'text': chunk_ssml,
+                    'index': chunk_index,
+                    'is_section_start': False,
+                })
+                logger.debug(f"SSML chunk {chunk_index} (sub-split): {len(chunk_ssml.encode('utf-8'))} bytes")
+                chunk_index += 1
+        else:
+            current_block_content = test_content if current_block_content else block
+
+    # Flush remaining content
+    if current_block_content.strip():
+        chunk_ssml = f"<speak>\n{current_block_content.strip()}\n</speak>"
+        chunks.append({
+            'text': chunk_ssml,
+            'index': chunk_index,
+            'is_section_start': _ssml_block_is_section_start(current_block_content),
+        })
+        logger.debug(f"SSML chunk {chunk_index} (final): {len(chunk_ssml.encode('utf-8'))} bytes")
+
+    logger.info(f"SSML chunked into {len(chunks)} chunks")
+    return chunks
+
+
+def _split_ssml_into_blocks(content: str) -> List[str]:
+    """Split SSML content into logical blocks at paragraph boundaries.
+
+    Each block contains one <p>...</p> paragraph, along with any preceding
+    inter-paragraph material (<break> elements, <prosody> section headers).
+    """
+    # Find all <p> start positions
+    p_starts = [m.start() for m in re.finditer(r'<p\b', content)]
+
+    if not p_starts:
+        # No <p> tags; return content as single block
+        return [content] if content.strip() else []
+
+    blocks = []
+    for i, start in enumerate(p_starts):
+        # Block starts either at previous </p> end or at content start
+        if i == 0:
+            block_start = 0
+        else:
+            # Find the </p> that closed the previous paragraph
+            prev_p_close = content.rfind('</p>', 0, start)
+            if prev_p_close != -1:
+                block_start = prev_p_close + len('</p>')
+            else:
+                block_start = start
+
+        # Find the closing </p> for this <p>
+        p_end = content.find('</p>', start)
+        if p_end == -1:
+            block_end = len(content)
+        else:
+            block_end = p_end + len('</p>')
+
+        block = content[block_start:block_end].strip()
+        if block:
+            blocks.append(block)
+
+    return blocks
+
+
+def _chunk_ssml_paragraph_by_sentences(paragraph_block: str, max_bytes: int) -> List[str]:
+    """Split an oversized SSML paragraph block at </s> sentence boundaries."""
+    # Extract the <p>...</p> content
+    p_match = re.search(r'<p\b[^>]*>(.*?)</p>', paragraph_block, re.DOTALL)
+    if not p_match:
+        return [paragraph_block] if paragraph_block.strip() else []
+
+    pre_content = paragraph_block[:p_match.start()].strip()  # breaks, headers before <p>
+    inner = p_match.group(1)
+
+    # Split at </s> boundaries, keeping the closing tag with its sentence
+    sentence_parts = re.split(r'(</s>)', inner)
+    sentence_blocks = []
+    i = 0
+    while i < len(sentence_parts):
+        if i + 1 < len(sentence_parts) and sentence_parts[i + 1] == '</s>':
+            sentence_blocks.append(sentence_parts[i] + sentence_parts[i + 1])
+            i += 2
+        else:
+            if sentence_parts[i].strip():
+                sentence_blocks.append(sentence_parts[i])
+            i += 1
+
+    # Accumulate sentences into sub-chunks
+    sub_chunks = []
+    current = ""
+    prefix = (pre_content + "\n") if pre_content else ""
+
+    for sent in sentence_blocks:
+        test_content = current + sent if current else sent
+        # Account for <p></p> wrapper and prefix
+        if not sub_chunks and prefix:
+            full_test = f"{prefix}<p>{test_content}</p>"
+        else:
+            full_test = f"<p>{test_content}</p>"
+
+        if current and len(full_test.encode('utf-8')) > max_bytes:
+            # Flush current
+            if not sub_chunks and prefix:
+                chunk = f"{prefix}<p>{current}</p>"
+            else:
+                chunk = f"<p>{current}</p>"
+            sub_chunks.append(chunk)
+            current = sent
+        else:
+            current = test_content
+
+    if current.strip():
+        if not sub_chunks and prefix:
+            chunk = f"{prefix}<p>{current}</p>"
+        else:
+            chunk = f"<p>{current}</p>"
+        sub_chunks.append(chunk)
+
+    return sub_chunks
+
+
+def _chunk_ssml_by_sentences(content: str, max_bytes: int) -> List[Dict[str, Any]]:
+    """Fallback: chunk raw SSML content by </s> boundaries when no <p> structure exists."""
+    effective_limit = max_bytes - SSML_WRAPPER_OVERHEAD
+    sentence_parts = re.split(r'(</s>)', content)
+    sentence_blocks = []
+    i = 0
+    while i < len(sentence_parts):
+        if i + 1 < len(sentence_parts) and sentence_parts[i + 1] == '</s>':
+            sentence_blocks.append(sentence_parts[i] + sentence_parts[i + 1])
+            i += 2
+        else:
+            if sentence_parts[i].strip():
+                sentence_blocks.append(sentence_parts[i])
+            i += 1
+
+    chunks = []
+    current = ""
+    chunk_index = 0
+
+    for sent in sentence_blocks:
+        test = current + sent if current else sent
+        if current and len(test.encode('utf-8')) > effective_limit:
+            chunk_ssml = f"<speak>\n{current.strip()}\n</speak>"
+            chunks.append({
+                'text': chunk_ssml,
+                'index': chunk_index,
+                'is_section_start': False,
+            })
+            chunk_index += 1
+            current = sent
+        else:
+            current = test
+
+    if current.strip():
+        chunk_ssml = f"<speak>\n{current.strip()}\n</speak>"
+        chunks.append({
+            'text': chunk_ssml,
+            'index': chunk_index,
+            'is_section_start': False,
+        })
+
+    return chunks
+
+
+def _ssml_block_is_section_start(content: str) -> bool:
+    """Check if an SSML block contains a section header (prosody tag)."""
+    return bool(re.search(r'<prosody[^>]*>', content))
+
+
 # ── Audio Generator Class ──
 
 class AudioGenerator:
@@ -241,6 +681,7 @@ class AudioGenerator:
         self.audio_format = DEFAULT_ENCODING
         self.bitrate = "128k"
         self.volume_gain_db = 0.0
+        self.pitch_semitones = 0.0  # Only effective for Neural2; ignored by Chirp3 HD
         self.normalize_audio = True
 
         # Initialize client
@@ -250,6 +691,7 @@ class AudioGenerator:
         """Initialize the Google Cloud TTS client."""
         if not TTS_AVAILABLE:
             print("Google Cloud TTS SDK not available")
+            logger.warning("Google Cloud TTS SDK not available")
             return
 
         # If GOOGLE_APPLICATION_CREDENTIALS points to a missing file,
@@ -258,17 +700,20 @@ class AudioGenerator:
         if gac and not os.path.exists(gac):
             print(f"Note: GOOGLE_APPLICATION_CREDENTIALS file not found: {gac}")
             print("  Unsetting it to use Application Default Credentials instead.")
+            logger.info(f"GOOGLE_APPLICATION_CREDENTIALS not found: {gac}, unsetting to use ADC")
             del os.environ['GOOGLE_APPLICATION_CREDENTIALS']
 
         try:
             self.client = texttospeech.TextToSpeechClient()
             self.is_ready = True
             print("Google Cloud TTS client initialized")
+            logger.info("Google Cloud TTS client initialized")
         except Exception as e:
             print(f"Failed to initialize TTS client: {e}")
             print("Make sure Google Cloud credentials are configured:")
             print("  gcloud auth application-default login")
             print("  or: export GOOGLE_APPLICATION_CREDENTIALS='/path/to/key.json'")
+            logger.error(f"Failed to initialize TTS client: {e}", exc_info=True)
             self.is_ready = False
 
     def _get_audio_encoding(self) -> 'texttospeech.AudioEncoding':
@@ -292,29 +737,55 @@ class AudioGenerator:
             time.sleep(MIN_REQUEST_INTERVAL - elapsed)
         self._last_request_time = time.time()
 
-    def synthesize_chunk(self, text: str) -> Optional[bytes]:
+    def synthesize_chunk(self, text: str, is_ssml: bool = False) -> Optional[bytes]:
         """
-        Synthesize a single text chunk to audio bytes.
+        Synthesize a single text or SSML chunk to audio bytes.
+
+        Args:
+            text: The text or SSML content to synthesize.
+            is_ssml: If True, treat input as SSML (use SynthesisInput(ssml=...)).
+
         Returns raw audio bytes (MP3/WAV/OGG) or None on failure.
         """
         if not self.is_ready or not self.client:
+            logger.error("synthesize_chunk called but TTS client not ready")
             return None
+
+        # Validate & repair SSML before sending to the API
+        if is_ssml:
+            try:
+                text = _validate_ssml_chunk(text)
+            except Exception as e:
+                logger.error(f"SSML validation/repair failed: {e}")
+                return None
+
+        input_bytes = len(text.encode('utf-8'))
+        logger.debug(f"synthesize_chunk: {input_bytes} bytes, "
+                     f"mode={'ssml' if is_ssml else 'text'}, "
+                     f"voice={self.voice_name}")
 
         try:
             self._rate_limit()
 
-            synthesis_input = texttospeech.SynthesisInput(text=text)
+            if is_ssml:
+                synthesis_input = texttospeech.SynthesisInput(ssml=text)
+            else:
+                synthesis_input = texttospeech.SynthesisInput(text=text)
 
             voice_params = texttospeech.VoiceSelectionParams(
                 language_code=self.language_code,
                 name=self.voice_name,
             )
 
-            audio_config = texttospeech.AudioConfig(
-                audio_encoding=self._get_audio_encoding(),
-                speaking_rate=self.speaking_rate,
-                volume_gain_db=self.volume_gain_db,
-            )
+            audio_config_params = {
+                'audio_encoding': self._get_audio_encoding(),
+                'speaking_rate': self.speaking_rate,
+                'volume_gain_db': self.volume_gain_db,
+            }
+            if self.pitch_semitones != 0.0:
+                audio_config_params['pitch'] = self.pitch_semitones
+
+            audio_config = texttospeech.AudioConfig(**audio_config_params)
 
             response = self.client.synthesize_speech(
                 input=synthesis_input,
@@ -322,10 +793,12 @@ class AudioGenerator:
                 audio_config=audio_config,
             )
 
+            logger.debug(f"synthesize_chunk: received {len(response.audio_content)} audio bytes")
             return response.audio_content
 
         except Exception as e:
             print(f"TTS synthesis error: {e}")
+            logger.error(f"TTS synthesis error: {e}", exc_info=True)
             return None
 
     def generate_audio(
@@ -338,10 +811,10 @@ class AudioGenerator:
         progress_callback: Optional[Callable[[str, float], None]] = None,
     ) -> Dict[str, Any]:
         """
-        Generate a complete audio file from text.
+        Generate a complete audio file from text or SSML.
 
         Args:
-            text: The full text to convert to speech.
+            text: The full text or SSML to convert to speech.
             output_path: Output file path (.mp3, .wav, .ogg, or .m4b).
             title: Paper title for metadata.
             author: Author name for metadata.
@@ -354,6 +827,7 @@ class AudioGenerator:
         start_time = time.time()
 
         if not self.is_ready:
+            logger.error("generate_audio called but TTS client not ready")
             return {
                 'success': False,
                 'error': 'TTS client not initialized. Check Google Cloud credentials.',
@@ -366,6 +840,12 @@ class AudioGenerator:
                 'error': 'No text provided.',
                 'output_path': '',
             }
+
+        # Detect input type (SSML vs plain text)
+        ssml_mode = is_ssml_content(text)
+        logger.info(f"Starting audio generation: input_type={'SSML' if ssml_mode else 'plain text'}, "
+                    f"voice={self.voice_name}, rate={self.speaking_rate}, format={self.audio_format}")
+        logger.debug(f"Input: {len(text)} chars, {len(text.encode('utf-8'))} bytes")
 
         # Determine output format from path extension
         out_path = Path(output_path)
@@ -383,10 +863,14 @@ class AudioGenerator:
         if progress_callback:
             progress_callback("Splitting text into chunks...", 0.0)
 
-        chunks = chunk_text_for_tts(text)
+        if ssml_mode:
+            chunks = chunk_ssml_for_tts(text)
+        else:
+            chunks = chunk_text_for_tts(text)
         total_chunks = len(chunks)
 
         if total_chunks == 0:
+            logger.error("Text produced no valid chunks")
             return {
                 'success': False,
                 'error': 'Text produced no valid chunks.',
@@ -394,6 +878,7 @@ class AudioGenerator:
             }
 
         print(f"Audio generation: {total_chunks} chunks to synthesize")
+        logger.info(f"Audio generation: {total_chunks} chunks to synthesize")
 
         # Step 2: Synthesize each chunk
         audio_segments = []
@@ -413,15 +898,25 @@ class AudioGenerator:
                 )
 
             # Retry logic
+            chunk_start_time = time.time()
             audio_bytes = None
             for attempt in range(3):
-                audio_bytes = self.synthesize_chunk(chunk_text)
+                audio_bytes = self.synthesize_chunk(chunk_text, is_ssml=ssml_mode)
                 if audio_bytes:
                     break
                 print(f"  Retry {attempt + 1} for chunk {i + 1}")
+                logger.warning(f"Retry {attempt + 1}/3 for chunk {i + 1}/{total_chunks}")
+                if attempt == 0 and ssml_mode:
+                    # Log the problematic SSML on first failure for debugging
+                    logger.error(f"Failing SSML chunk {i + 1} content "
+                                 f"(first 300 chars):\n{chunk_text[:300]}")
                 time.sleep(1.0 * (attempt + 1))
 
+            chunk_elapsed = time.time() - chunk_start_time
+
             if audio_bytes:
+                logger.debug(f"Chunk {i + 1}/{total_chunks}: "
+                            f"{len(audio_bytes)} audio bytes, {chunk_elapsed:.2f}s")
                 try:
                     # Load into pydub
                     fmt_for_pydub = "mp3" if self.audio_format in ("MP3", "M4B") else (
@@ -434,8 +929,18 @@ class AudioGenerator:
 
                     # Track chapter marker if this is a section start
                     if is_section:
-                        section_title = chunk_text.strip().split('\n')[0].strip()
-                        section_title = section_title.rstrip('.')
+                        if ssml_mode:
+                            # Extract section title from <prosody> tag
+                            prosody_match = re.search(
+                                r'<prosody[^>]*>(.*?)</prosody>', chunk_text
+                            )
+                            if prosody_match:
+                                section_title = prosody_match.group(1).strip()
+                            else:
+                                section_title = f"Section {len(chapter_markers) + 1}"
+                        else:
+                            section_title = chunk_text.strip().split('\n')[0].strip()
+                            section_title = section_title.rstrip('.')
                         chapter_markers.append((section_title, current_ms))
 
                     current_ms += len(segment)
@@ -443,17 +948,23 @@ class AudioGenerator:
 
                 except Exception as e:
                     print(f"  Error loading audio for chunk {i + 1}: {e}")
+                    logger.error(f"Error loading audio for chunk {i + 1}: {e}", exc_info=True)
                     failed_chunks += 1
             else:
                 failed_chunks += 1
                 print(f"  Failed to synthesize chunk {i + 1}")
+                logger.error(f"Failed to synthesize chunk {i + 1}/{total_chunks} after 3 retries")
 
         if not audio_segments:
+            logger.error("All chunks failed to synthesize")
             return {
                 'success': False,
                 'error': 'All chunks failed to synthesize.',
                 'output_path': '',
             }
+
+        logger.info(f"Synthesis complete: {len(audio_segments)}/{total_chunks} chunks succeeded, "
+                    f"{failed_chunks} failed")
 
         # Step 3: Concatenate audio segments
         if progress_callback:
@@ -504,6 +1015,7 @@ class AudioGenerator:
                 combined.export(str(out_path), format="ogg")
 
         except Exception as e:
+            logger.error(f"Failed to export audio: {e}", exc_info=True)
             return {
                 'success': False,
                 'error': f'Failed to export audio: {e}',
@@ -526,6 +1038,7 @@ class AudioGenerator:
                 )
         except Exception as e:
             print(f"Warning: failed to add metadata: {e}")
+            logger.warning(f"Failed to add metadata: {e}", exc_info=True)
 
         # Step 7: Calculate statistics
         elapsed = time.time() - start_time
@@ -553,6 +1066,9 @@ class AudioGenerator:
 
         print(f"Audio generated: {result['duration_formatted']}, "
               f"{result['file_size_formatted']}, {elapsed:.1f}s")
+        logger.info(f"Audio generated: {result['duration_formatted']}, "
+                   f"{result['file_size_formatted']}, {elapsed:.1f}s, "
+                   f"{total_chunks - failed_chunks}/{total_chunks} chunks OK")
 
         return result
 
@@ -570,7 +1086,7 @@ class AudioGenerator:
         # Force MP3 for preview
         original_format = self.audio_format
         self.audio_format = "MP3"
-        audio_bytes = self.synthesize_chunk(sample_text)
+        audio_bytes = self.synthesize_chunk(sample_text, is_ssml=False)
         self.audio_format = original_format
         return audio_bytes
 
@@ -666,6 +1182,7 @@ class AudioGenerator:
 
         except Exception as e:
             print(f"Warning: M4B metadata error: {e}")
+            logger.warning(f"M4B metadata error: {e}", exc_info=True)
 
     def list_available_voices(self) -> Dict[str, List[str]]:
         """

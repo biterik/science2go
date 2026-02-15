@@ -42,8 +42,9 @@ class TemplateManager:
         try:
             template_files = {
                 "Review Papers": "review_papers.yaml",
-                "Technical Papers": "technical_papers.yaml", 
-                "Custom Template": "custom_template.yaml"
+                "Technical Papers": "technical_papers.yaml",
+                "Custom Template": "custom_template.yaml",
+                "SSML Converter": "ssml_converter.yaml",
             }
             
             print(f"🔍 Looking for templates in: {self.templates_dir}")
@@ -72,43 +73,38 @@ class TemplateManager:
         """Create a default template if missing"""
         print(f"🏗️ Creating default template: {name}")
         
-        _context_block = (
-            'CONTEXT FROM PREVIOUS SECTION (for continuity only — do NOT include in your output):\n'
-            '---\n{context}\n---\n\n'
-        )
-
         if "Review" in name:
             template_content = {
                 'name': name,
-                'description': 'Default review paper cleanup template',
-                'system_prompt': 'You are an expert at cleaning academic review papers. Remove citations, figure/table references, front/back matter. Expand acronyms on first use. Preserve all scientific content.',
-                'user_prompt': _context_block + 'TEXT TO CLEAN (clean ONLY the text below and output it):\n{content}',
+                'description': 'Default review paper template',
+                'system_prompt': 'You are an expert at converting academic review papers into audio-friendly format.',
+                'user_prompt': 'Convert this academic text to audio-friendly format. Remove figures, tables, citations. Add natural transitions.\n\nTEXT TO CONVERT:\n{content}',
                 'post_processing': {
-                    'cleanup_only': True,
-                    'preserve_content': True,
+                    'add_section_markers': True,
+                    'natural_transitions': True,
+                    'tts_optimizations': True
                 }
             }
         elif "Technical" in name:
             template_content = {
                 'name': name,
-                'description': 'Default technical paper cleanup template',
-                'system_prompt': 'You are an expert at cleaning technical research papers. Remove citations, figure/table references, front/back matter. Expand abbreviations and spell out equations. Preserve all technical content.',
-                'user_prompt': _context_block + 'TEXT TO CLEAN (clean ONLY the text below and output it):\n{content}',
+                'description': 'Default technical paper template',
+                'system_prompt': 'You are an expert at converting technical research papers into audio-friendly format.',
+                'user_prompt': 'Convert this technical paper to audio-friendly format. Explain complex concepts clearly. Remove figures, tables, citations.\n\nTEXT TO CONVERT:\n{content}',
                 'post_processing': {
-                    'cleanup_only': True,
-                    'preserve_content': True,
-                    'technical_accuracy': True,
+                    'add_section_markers': True,
+                    'technical_explanations': True,
+                    'tts_optimizations': True
                 }
             }
         else:
             template_content = {
                 'name': name,
-                'description': 'Custom cleanup template',
-                'system_prompt': 'You are a conservative text processor. Make only minimal changes necessary for clarity. Preserve all original content and structure.',
-                'user_prompt': _context_block + 'TEXT TO CLEAN (make minimal changes only):\n{content}',
+                'description': 'Custom template',
+                'system_prompt': 'You are an expert content processor.',
+                'user_prompt': 'Process this content according to user specifications.\n\nTEXT TO CONVERT:\n{content}',
                 'post_processing': {
-                    'cleanup_only': True,
-                    'minimal_changes': True,
+                    'user_defined': True
                 }
             }
         
@@ -136,24 +132,22 @@ class TemplateManager:
             return template.get('system_prompt', '')
         return ''
     
-    def get_user_prompt(self, template_name: str, content: str, context: str = "") -> str:
-        """Get formatted user prompt with content and optional context preamble.
+    def get_user_prompt(self, template_name: str, content: str, **kwargs) -> str:
+        """Get formatted user prompt with content and optional extra placeholders.
 
-        Args:
-            template_name: Name of the template to use.
-            content: The text chunk to process.
-            context: Trailing text from the previous chunk's output, used for
-                     continuity. Empty string for single-document or first chunk.
+        The SSML Converter template uses {context} in addition to {content}.
+        Any extra keyword arguments (e.g. context='...') are passed through
+        to str.format().  Missing placeholders default to empty string.
         """
         template = self.get_template(template_name)
         if template:
             prompt_template = template.get('user_prompt', '')
-            context_text = context if context else "None — this is the first section of the document."
-            try:
-                return prompt_template.format(content=content, context=context_text)
-            except KeyError:
-                # Template doesn't have {context} placeholder — format without it
-                return prompt_template.format(content=content)
+            # Build format dict with content + any extras; default missing keys
+            fmt = {'content': content, **kwargs}
+            # Use format_map with a defaultdict so missing keys become ''
+            import collections
+            safe_fmt = collections.defaultdict(str, fmt)
+            return prompt_template.format_map(safe_fmt)
         return content
     
     def get_description(self, template_name: str) -> str:
