@@ -38,7 +38,7 @@ user_prompt: |
         - "HESIV" to "Hydrogen-Enhanced Strain-Induced Vacancy Formation"
         - "AIDE" to "Adsorption-Induced Dislocation Emission"
         - "SFE" to "Stacking Fault Energy"
-      - When an acronym or abbreviation is used for the first time, expand it fully, and then use the acronym afterwards. Example: "Hydrogen embrittlement, abbreviated as H. E., is a complex phenomenon."
+      - When an acronym or abbreviation is used for the first time, expand it fully, and then use the acronym afterwards. Write the acronym with dots between each letter for clear pronunciation — for example: "Hydrogen embrittlement, abbreviated as H.E., is a complex phenomenon." or "grain boundary, abbreviated as G.B., engineering". Do NOT put spaces between the letters of an acronym — write "H.E." not "H. E.".
   6.  **Punctuation and Flow:**
       - Replace bullet points with fluid, prose-like sentences or lists that flow naturally.
       - Expand common abbreviations like "i.e." to "that is," and "e.g." to "for example."

@@ -16,11 +16,14 @@ system_prompt: |
   4. Add <break time="300ms"/> between paragraphs (between closing </p> and opening <p>).
   5. Use <emphasis level="moderate"> sparingly for key scientific terms or important
      findings — no more than 2-3 per paragraph. Do NOT over-emphasise.
-  6. Use <say-as> for these cases:
+  6. Use <say-as> ONLY for these cases:
      - Dates: <say-as interpret-as="date" format="y">2024</say-as>
      - Ordinals: <say-as interpret-as="ordinal">3</say-as>  (for "3rd", "1st", etc.)
      - Cardinal numbers: <say-as interpret-as="cardinal">42</say-as>
      - Fractions: <say-as interpret-as="fraction">3/4</say-as>
+     Do NOT use <say-as interpret-as="characters"> — it is unreliable with Google TTS
+     and causes content to be silently dropped. Leave abbreviations and acronyms
+     as plain text (e.g. "G.B." or "H.E.") — the TTS engine will handle them.
   7. Escape ALL XML special characters in text content:
      - & becomes &amp;
      - < becomes &lt;   (when not an SSML tag)

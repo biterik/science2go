@@ -332,11 +332,20 @@ _SUPPORTED_SSML_TAGS = {'speak', 'break', 'say-as', 'sub', 'emphasis',
 def _sanitize_ssml(ssml: str) -> str:
     """Remove SSML tags not supported by Google Cloud TTS and fix common XML errors.
 
-    1. Strips unsupported tags (keeps their text content).
-    2. Escapes bare ``&`` characters that aren't already XML entities.
-    3. Escapes stray ``<`` / ``>`` in text content (not part of tags).
-    4. Removes any remaining non-XML-safe characters.
+    1. Replaces problematic <say-as interpret-as="characters"> with plain text.
+    2. Strips unsupported tags (keeps their text content).
+    3. Escapes bare ``&`` characters that aren't already XML entities.
+    4. Escapes stray ``<`` / ``>`` in text content (not part of tags).
+    5. Removes any remaining non-XML-safe characters.
     """
+    # ── Step 0: strip <say-as interpret-as="characters"> — unreliable on Chirp 3 HD ──
+    # These cause content to be silently dropped by the TTS engine.
+    # Replace with plain text content so the abbreviation is still spoken.
+    result = re.sub(
+        r'<say-as\s+interpret-as=["\']characters["\'][^>]*>(.*?)</say-as>',
+        r'\1', ssml, flags=re.DOTALL | re.IGNORECASE
+    )
+
     # ── Step 1: strip unsupported tags ──
     def _strip_unsupported(match):
         tag_name = match.group(1).split()[0]  # handle <tag attr="...">
@@ -346,7 +355,7 @@ def _sanitize_ssml(ssml: str) -> str:
         return ''  # remove unsupported tag
 
     # Strip opening tags: <tagname ...>
-    result = re.sub(r'<([a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>', _strip_unsupported, ssml)
+    result = re.sub(r'<([a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>', _strip_unsupported, result)
     # Strip closing tags: </tagname>
     result = re.sub(r'</([a-zA-Z][a-zA-Z0-9_-]*)>', _strip_unsupported, result)
 
