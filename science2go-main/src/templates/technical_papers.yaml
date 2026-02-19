@@ -14,18 +14,20 @@ user_prompt: |
   Clean this technical research paper for text-to-speech while preserving ALL content:
 
   CLEANING RULES (apply conservatively):
-  1. KEEP the paper title as the very first line. Delete author list, affiliations, and dates.
+  1. KEEP the paper title as the very first line. End it with a period if it does not already have one.
+     Follow the title with a blank line, then the word "Abstract." on its own line, then a blank line, then the abstract text. This structure must ALWAYS be present even if the original has no explicit abstract header.
+     Delete author list, affiliations, and dates.
   2. Remove figure references: "Figure 1", "Fig. 2", "(see Figure 3)" → delete these phrases only
   3. Remove table references: "Table 1", "see Table 2" → delete these phrases only
   4. Remove citation brackets: "[1,2,3]", "(Smith et al., 2020)" → keep author names, remove brackets/numbers
-  4. Convert mathematical symbols: "α" → "alpha", "β" → "beta", "μ" → "mu"
-  5. Convert units: "10 μm" → "10 micrometers", "5 GPa" → "5 gigapascals"
-  6. Convert symbols: "%" → "percent", "&" → "and", "°" → "degrees" 
-  7. Expand technical abbreviations: "XRD" → "XRD (X-ray diffraction)" on first use
-  
+  5. Convert mathematical symbols: "α" → "alpha", "β" → "beta", "μ" → "mu"
+  6. Convert units: "10 μm" → "10 micrometers", "5 GPa" → "5 gigapascals"
+  7. Convert symbols: "%" → "percent", "&" → "and", "°" → "degrees"
+  8. Expand technical abbreviations: "XRD" → "XRD (X-ray diffraction)" on first use
+
   SPEECH FLOW (minimal changes only):
   - Break extremely long technical sentences (60+ words) into shorter segments
-  - Convert section headers: "## Methods" → "Methods section."
+  - Convert section headers: "## Abstract" → "Abstract." (see rule 1), other headers: "## Methods" → "Methods section."
   - Spell out complex equations: "E = mc²" → "E equals m c squared"
 
   TEXT FLOW:

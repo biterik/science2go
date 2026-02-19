@@ -268,13 +268,15 @@ class TTSOptimizer:
         text = re.sub(r',\s*\.', '.', text)  # Fix ", ." combinations
         text = re.sub(r'\.\s*;', '.', text)  # Fix ". ;" combinations
         text = re.sub(r';\s*\.', '.', text)  # Fix "; ." combinations
+
+        # Fix ". and." / ". or." / ". but." artifacts from sentence splitting
+        text = re.sub(r'\.\s+(and|or|but|which|that|who|however|moreover|furthermore)\.\s+',
+                       r', \1 ', text, flags=re.IGNORECASE)
         
         # Remove all pause tag variants from Gemini AI processing.
-        # The review/technical templates tell Gemini to insert [pause short] and
-        # [pause long] markers, but these are not consumed by any downstream code —
-        # the SSML converter adds its own <break> timing independently.
-        # Gemini also frequently drops brackets, producing bare "short"/"long" words.
-        # Remove all variants: bracketed, unbracketed, and orphaned fragments.
+        # Templates no longer ask for pause tags, but Gemini may still
+        # hallucinate them.  Remove all variants as a safety net:
+        # bracketed, unbracketed, and orphaned fragments.
         text = re.sub(r'\[\s*pause\s*(short|long)?\s*\]', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bpause\s+(short|long)\b\.?\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\b(short|long)\s+pause\b\.?\s*', '', text, flags=re.IGNORECASE)
@@ -406,20 +408,22 @@ class AdvancedTextProcessor:
                     return result
 
             except Exception as e:
-                self.analytics.record_error(f"Attempt {attempt + 1} failed for {chunk_info}: {str(e)}")
+                error_str = str(e)
+                self.analytics.record_error(f"Attempt {attempt + 1} failed for {chunk_info}: {error_str}")
 
                 if attempt < self.max_retries - 1:
                     delay = self.base_retry_delay * (2 ** attempt)
-                    print(f"⚠️ Retry {attempt + 1} for {chunk_info} in {delay}s...")
+                    print(f"⚠️ Retry {attempt + 1} for {chunk_info} in {delay}s... ({error_str[:120]})")
                     self.analytics.record_retry()
                     time.sleep(delay)
                 else:
-                    print(f"⚠️ All retries failed for {chunk_info}")
+                    print(f"⚠️ All retries failed for {chunk_info}: {error_str[:200]}")
 
         return None
     
     def process_single_chunk(self, chunk_text: str, template_name: str, chunk_info: str,
-                            context: str = "") -> Optional[str]:
+                            context: str = "",
+                            _using_template: bool = False) -> Optional[str]:
         """Process a single chunk with template using proper system instruction.
 
         Args:
@@ -427,6 +431,7 @@ class AdvancedTextProcessor:
             template_name: Which template to use.
             chunk_info: Human-readable description of the chunk.
             context: Optional context from the previous chunk (used by SSML Converter).
+            _using_template: Set internally — True when a real template was loaded.
         """
         if not self.model:
             return None
@@ -435,6 +440,7 @@ class AdvancedTextProcessor:
 
         if not TEMPLATE_MANAGER_AVAILABLE or not template_manager:
             # Fallback processing with conservative instructions
+            _using_template = False
             system_prompt = (
                 "You are an expert at cleaning academic text for text-to-speech. "
                 "You ONLY output the cleaned text. You NEVER ask for input or repeat instructions."
@@ -459,6 +465,7 @@ TEXT TO CLEAN:
 {chunk_text}"""
         else:
             # Template-based processing
+            _using_template = True
             system_prompt = template_manager.get_system_prompt(template_name)
             user_prompt = template_manager.get_user_prompt(
                 template_name, chunk_text, context=context
@@ -483,20 +490,54 @@ TEXT TO CLEAN:
                 getattr(um, 'candidates_token_count', 0) or 0,
             )
 
-        if response and response.text:
-            result = response.text.strip()
+        # --- Extract text, handling blocked / empty responses ----
+        result_text = None
+        try:
+            if response and response.text:
+                result_text = response.text.strip()
+        except ValueError:
+            # response.text raises ValueError when no valid Part is returned
+            # (e.g. finish_reason is RECITATION or SAFETY).
+            # Try to salvage partial text from candidates.
+            finish_reason = "UNKNOWN"
+            try:
+                candidate = response.candidates[0]
+                finish_reason = candidate.finish_reason.name
+                # Some blocked responses still contain partial text
+                if candidate.content and candidate.content.parts:
+                    partial = "".join(
+                        p.text for p in candidate.content.parts if hasattr(p, 'text')
+                    ).strip()
+                    if len(partial) > 200:
+                        result_text = partial
+                        print(f"   ⚠️ Response blocked ({finish_reason}) but salvaged {len(partial):,} chars of partial text")
+            except Exception:
+                pass
 
-            # Strip markdown code fences that Gemini sometimes wraps SSML in
-            if is_ssml_template:
-                result = re.sub(r'^```(?:xml|ssml)?\s*\n?', '', result)
-                result = re.sub(r'\n?```\s*$', '', result)
-            else:
-                # Apply post-processing TTS optimizations (only for plain text)
-                result = self.tts_optimizer.optimize_for_tts(result)
+            if not result_text:
+                print(f"   ⚠️ Response blocked by Gemini (finish_reason={finish_reason}) — no usable text")
+                return None
 
-            return result
+        if not result_text:
+            return None
 
-        return None
+        # --- Post-process the result ---
+        # Strip markdown code fences that Gemini sometimes wraps SSML in
+        if is_ssml_template:
+            result_text = re.sub(r'^```(?:xml|ssml)?\s*\n?', '', result_text)
+            result_text = re.sub(r'\n?```\s*$', '', result_text)
+        elif _using_template:
+            # Template already instructed Gemini to clean the text fully.
+            # Only apply lightweight punctuation fixes — do NOT run the
+            # full optimize_for_tts() which destructively splits sentences,
+            # removes brackets, and converts symbols that Gemini has
+            # already handled, causing ". and" artifacts and title loss.
+            result_text = self.tts_optimizer.fix_punctuation_issues(result_text)
+        else:
+            # No template — apply full TTS optimizations on raw AI output
+            result_text = self.tts_optimizer.optimize_for_tts(result_text)
+
+        return result_text
     
     def merge_chunks_intelligently(self, chunks: List[str]) -> str:
         """Improved chunk merging to prevent cutoffs"""

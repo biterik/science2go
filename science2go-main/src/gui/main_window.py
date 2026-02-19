@@ -358,7 +358,7 @@ class Science2GoApp:
         ).pack(anchor="w", padx=10, pady=(10, 5))
 
         self.description_text = ctk.CTkTextbox(desc_section, height=120,
-                                               wrap="word", state="disabled")
+                                               wrap="word")
         self.description_text.pack(fill="x", padx=10, pady=(0, 10))
 
     # ──────────────────────────────────────────────
@@ -1225,11 +1225,10 @@ class Science2GoApp:
 
         description_text = "".join(description_parts)
 
-        # Display in description preview
+        # Display in description preview (leave editable so user can tweak)
         self.description_text.configure(state="normal")
         self.description_text.delete("0.0", "end")
         self.description_text.insert("0.0", description_text)
-        self.description_text.configure(state="disabled")
 
         self.status_var.set("Audio paper description generated")
 

@@ -10,11 +10,12 @@ user_prompt: |
 
   CLEANING AND FORMATTING RULES:
   1.  **Front Matter:**
-      - KEEP the paper title as the very first line, exactly as it appears. Do NOT delete the title.
+      - KEEP the paper title as the very first line. End it with a period if it does not already have one.
+      - Follow the title with a blank line, then the word "Abstract." on its own line, then a blank line, then the abstract text. This structure must ALWAYS be present even if the original markdown has no explicit abstract header.
       - DELETE the author list, affiliations, and any received/accepted/published dates.
   2.  **Remove All Back Matter:** Delete the entire "Acknowledgements" and "References" sections and any other content after the main body of the paper.
   3.  **Section Headers:**
-      - Convert "## ABSTRACT" to "Abstract."
+      - The abstract header must always read "Abstract." (see rule 1 above).
       - Convert other "##" headers to "New section: [Header Name]."
       - Ensure there is a natural-sounding pause after each header.
   4.  **Citations and References:**
