@@ -9,7 +9,9 @@ user_prompt: |
   Clean this academic text to create a script for a professional voice narrator. The final output must be optimized for a smooth, logical, and engaging listening experience.
 
   CLEANING AND FORMATTING RULES:
-  1.  **Remove All Front Matter:** Delete the title, author list, affiliations, and any received/accepted/published dates.
+  1.  **Front Matter:**
+      - KEEP the paper title as the very first line, exactly as it appears. Do NOT delete the title.
+      - DELETE the author list, affiliations, and any received/accepted/published dates.
   2.  **Remove All Back Matter:** Delete the entire "Acknowledgements" and "References" sections and any other content after the main body of the paper.
   3.  **Section Headers:**
       - Convert "## ABSTRACT" to "Abstract."
@@ -40,16 +42,8 @@ user_prompt: |
       - Replace bullet points with fluid, prose-like sentences or lists that flow naturally.
       - Expand common abbreviations like "i.e." to "that is," and "e.g." to "for example."
       - Break up extremely long sentences into shorter, more digestible phrases.
-  7.  **Pause Markup for Text-to-Speech:**
-      - Insert pause markup tags to create natural-sounding pacing for the TTS engine.
-      - Use exactly these literal tags (they are NOT SSML, they are inline text tags):
-        - [pause short] — for brief pauses between related ideas or after commas in complex lists.
-        - [pause long] — for longer pauses between paragraphs, after section headers, or before a new major topic.
-      - Place [pause long] after each section header line (e.g., "New section: Methods. [pause long]").
-      - Place [pause long] between major paragraphs or topic transitions.
-      - Place [pause short] after important data points, definitions, or before conjunctions in complex sentences.
-      - Do NOT overuse pause tags. Use roughly 1-3 per paragraph maximum.
-      - IMPORTANT: Write the tags exactly as shown: [pause short] and [pause long]. Do not use any other format.
+      - Use paragraph breaks between major sections and topic transitions for natural pacing.
+      - Do NOT insert any pause tags, markup tags, or special annotations. Use only plain prose.
 
   CRITICAL REQUIREMENTS:
   - DO NOT lose any scientific content, data points, or key findings. The information must remain scientifically accurate and complete.

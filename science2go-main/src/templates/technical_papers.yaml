@@ -14,9 +14,10 @@ user_prompt: |
   Clean this technical research paper for text-to-speech while preserving ALL content:
 
   CLEANING RULES (apply conservatively):
-  1. Remove figure references: "Figure 1", "Fig. 2", "(see Figure 3)" → delete these phrases only
-  2. Remove table references: "Table 1", "see Table 2" → delete these phrases only  
-  3. Remove citation brackets: "[1,2,3]", "(Smith et al., 2020)" → keep author names, remove brackets/numbers
+  1. KEEP the paper title as the very first line. Delete author list, affiliations, and dates.
+  2. Remove figure references: "Figure 1", "Fig. 2", "(see Figure 3)" → delete these phrases only
+  3. Remove table references: "Table 1", "see Table 2" → delete these phrases only
+  4. Remove citation brackets: "[1,2,3]", "(Smith et al., 2020)" → keep author names, remove brackets/numbers
   4. Convert mathematical symbols: "α" → "alpha", "β" → "beta", "μ" → "mu"
   5. Convert units: "10 μm" → "10 micrometers", "5 GPa" → "5 gigapascals"
   6. Convert symbols: "%" → "percent", "&" → "and", "°" → "degrees" 
@@ -27,14 +28,9 @@ user_prompt: |
   - Convert section headers: "## Methods" → "Methods section."
   - Spell out complex equations: "E = mc²" → "E equals m c squared"
 
-  PAUSE MARKUP FOR TTS:
-  - Insert pause markup tags for natural pacing. Use these exact literal tags (NOT SSML):
-    - [pause short] — brief pause after data points, definitions, or between related clauses
-    - [pause long] — longer pause after section headers, between paragraphs, or before new topics
-  - Place [pause long] after each section header (e.g., "Methods section. [pause long]")
-  - Place [pause long] between major paragraphs or topic transitions
-  - Place [pause short] after important measurements or technical terms on first use
-  - Use roughly 1-3 pause tags per paragraph maximum. Do NOT overuse them.
+  TEXT FLOW:
+  - Use paragraph breaks between major sections and topic transitions for natural pacing.
+  - Do NOT insert any pause tags, markup tags, or special annotations. Use only plain prose.
 
   CRITICAL REQUIREMENTS:
   - Keep ALL technical methodology and procedures

@@ -320,6 +320,25 @@ class Science2GoApp:
         self.abstract_text = ctk.CTkTextbox(form_frame, height=120, wrap="word")
         self.abstract_text.grid(row=5, column=1, sticky="ew", pady=5)
 
+        # ── Save / Load / Clear Paper Info Buttons ──
+        info_btn_frame = ctk.CTkFrame(container, fg_color="transparent")
+        info_btn_frame.pack(fill="x", padx=15, pady=(5, 10))
+
+        ctk.CTkButton(
+            info_btn_frame, text="Save Paper Info", width=120,
+            command=self.save_paper_info,
+        ).pack(side="left", padx=(0, 5))
+
+        ctk.CTkButton(
+            info_btn_frame, text="Load Paper Info", width=120,
+            command=self.load_paper_info,
+        ).pack(side="left", padx=(0, 5))
+
+        ctk.CTkButton(
+            info_btn_frame, text="Clear", width=80,
+            command=self.clear_paper_info,
+        ).pack(side="left")
+
         # ── Generate Description Button ──
         description_frame = ctk.CTkFrame(container, fg_color="transparent")
         description_frame.pack(fill="x", padx=15, pady=(0, 10))
@@ -1213,6 +1232,108 @@ class Science2GoApp:
         self.description_text.configure(state="disabled")
 
         self.status_var.set("Audio paper description generated")
+
+    # ── Paper Info: Save / Load / Clear ──
+
+    def save_paper_info(self):
+        """Save paper metadata to a JSON file."""
+        title = self.title_text.get("0.0", "end").strip()
+        if not title:
+            messagebox.showwarning("No Data", "No paper information to save.")
+            return
+
+        # Build a safe default filename from the title
+        safe_title = re.sub(r'[^\w\s-]', '', title)[:60].strip().replace(' ', '_')
+        default_name = f"{safe_title}_info.json" if safe_title else "paper_info.json"
+
+        file_path = filedialog.asksaveasfilename(
+            title="Save Paper Info",
+            defaultextension=".json",
+            initialfile=default_name,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        data = {
+            "science2go_type": "paper_info",
+            "saved_at": datetime.now().isoformat(),
+            "source_pdf": self.pdf_path_var.get(),
+            "paper_info": {
+                "title": title,
+                "authors": self.authors_var.get().strip(),
+                "journal": self.journal_var.get().strip(),
+                "year": self.year_var.get().strip(),
+                "doi": self.doi_var.get().strip(),
+                "abstract": self.abstract_text.get("0.0", "end").strip(),
+            },
+        }
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            self.status_var.set(f"Paper info saved: {os.path.basename(file_path)}")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save paper info:\n{e}")
+
+    def load_paper_info(self):
+        """Load paper metadata from a JSON file."""
+        file_path = filedialog.askopenfilename(
+            title="Load Paper Info",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to read file:\n{e}")
+            return
+
+        if data.get("science2go_type") != "paper_info":
+            messagebox.showwarning(
+                "Wrong File",
+                "This file does not appear to be a Science2Go paper info file."
+            )
+            return
+
+        info = data.get("paper_info", {})
+
+        # Populate fields
+        self.title_text.delete("0.0", "end")
+        if info.get("title"):
+            self.title_text.insert("0.0", info["title"])
+
+        self.authors_var.set(info.get("authors", ""))
+        self.journal_var.set(info.get("journal", ""))
+        self.year_var.set(info.get("year", ""))
+        self.doi_var.set(info.get("doi", ""))
+
+        self.abstract_text.delete("0.0", "end")
+        if info.get("abstract"):
+            self.abstract_text.insert("0.0", info["abstract"])
+
+        if data.get("source_pdf"):
+            self.pdf_path_var.set(data["source_pdf"])
+
+        self.status_var.set(f"Paper info loaded: {os.path.basename(file_path)}")
+
+    def clear_paper_info(self):
+        """Clear all paper metadata fields."""
+        self.title_text.delete("0.0", "end")
+        self.authors_var.set("")
+        self.journal_var.set("")
+        self.year_var.set("")
+        self.doi_var.set("")
+        self.abstract_text.delete("0.0", "end")
+
+        self.description_text.configure(state="normal")
+        self.description_text.delete("0.0", "end")
+        self.description_text.configure(state="disabled")
+
+        self.status_var.set("Paper information cleared")
 
     # ══════════════════════════════════════════════
     #  Tab 2: PDF to Markdown Methods
@@ -2550,7 +2671,7 @@ class Science2GoApp:
                         count=1,
                     )
                 else:
-                    content = desc + "\n\n[pause long]\n\n" + content
+                    content = desc + "\n\n" + content
 
         # Get output path
         output_path = self.output_path_var.get()

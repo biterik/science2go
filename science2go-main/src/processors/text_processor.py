@@ -249,9 +249,20 @@ class TTSOptimizer:
         text = re.sub(r'\.\s*;', '.', text)  # Fix ". ;" combinations
         text = re.sub(r';\s*\.', '.', text)  # Fix "; ." combinations
         
-        # Remove literal "pause" text
+        # Remove all pause tag variants from Gemini AI processing.
+        # The review/technical templates tell Gemini to insert [pause short] and
+        # [pause long] markers, but these are not consumed by any downstream code —
+        # the SSML converter adds its own <break> timing independently.
+        # Gemini also frequently drops brackets, producing bare "short"/"long" words.
+        # Remove all variants: bracketed, unbracketed, and orphaned fragments.
+        text = re.sub(r'\[\s*pause\s*(short|long)?\s*\]', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bpause\s+(short|long)\b\.?\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(short|long)\s+pause\b\.?\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bpause\b\.?\s*', '', text, flags=re.IGNORECASE)
-        
+        # Remove orphaned "short"/"long" that Gemini left without "pause" keyword —
+        # only when they appear right after a sentence boundary (". long Defects...")
+        text = re.sub(r'(?<=\.)\s+(short|long)\s+(?=[A-Z])', ' ', text)
+
         # Normalize multiple spaces
         text = re.sub(r'\s+', ' ', text)
         
