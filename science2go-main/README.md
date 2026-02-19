@@ -56,7 +56,7 @@ The application processes papers through six steps, each with its own GUI tab:
 | 3. Markdown Processing | AI text cleanup | Gemini 2.5 Flash cleans the text using YAML templates (Review Papers, Technical Papers, Custom). Removes citations, expands abbreviations, optimizes for speech. |
 | 4. MD to SSML | SSML markup | Converts cleaned text to SSML v1.1 with paragraph/sentence structure, emphasis, prosody, and natural pacing. Built-in SSML editor with save/load. |
 | 5. Audio Config | Voice & format setup | Select voice model (Chirp 3 HD or Neural2), choose from 30+ voices, adjust rate/pitch, pick output format. |
-| 6. Speech Output | TTS generation | Generate audio with progress tracking, TTS cost estimate, and export to MP3/WAV/OGG/M4B. |
+| 6. Speech Output | TTS generation | Generate audio with progress tracking, TTS cost estimate, auto-detected chapter markers, and export to MP3/WAV/OGG/M4B. |
 
 ---
 
@@ -153,7 +153,8 @@ Pitch:          0.0 (neutral)
 - **Formats**: MP3, WAV, OGG, M4B
 - **Bitrate options**: 64k – 320k
 - **Processing**: Normalized, mono encoding
-- **Metadata**: Title, author, chapter markers (MP3/M4B)
+- **Metadata**: Title, author embedded in output files
+- **Chapter markers**: Automatically detected from SSML section headers and embedded as ID3 CHAP/CTOC tags (MP3) or as text chapters (M4B). Chapter names and timestamps are shown in the generation summary dialog and console output. No manual setup needed.
 
 ### Template System
 Templates are YAML files with `system_prompt` and `user_prompt` fields. The `{content}` placeholder is replaced with the text chunk to process. The SSML converter template also uses `{context}` for cross-chunk continuity.

@@ -1084,6 +1084,7 @@ class AudioGenerator:
             'speaking_rate': self.speaking_rate,
             'audio_format': self.audio_format,
             'chapter_count': len(chapter_markers),
+            'chapter_markers': chapter_markers,  # [(title, start_ms), ...]
             'tts_characters': total_billable_chars,
             'tts_cost': tts_cost,
         }
@@ -1091,6 +1092,11 @@ class AudioGenerator:
         print(f"Audio generated: {result['duration_formatted']}, "
               f"{result['file_size_formatted']}, {elapsed:.1f}s, "
               f"{total_billable_chars:,} chars, est. TTS cost: ${tts_cost:.4f}")
+        if chapter_markers:
+            print(f"📑 {len(chapter_markers)} chapter markers embedded:")
+            for ch_title, ch_ms in chapter_markers:
+                mins, secs = divmod(ch_ms // 1000, 60)
+                print(f"   {mins:02d}:{secs:02d} — {ch_title}")
         logger.info(f"Audio generated: {result['duration_formatted']}, "
                    f"{result['file_size_formatted']}, {elapsed:.1f}s, "
                    f"{total_chunks - failed_chunks}/{total_chunks} chunks OK")

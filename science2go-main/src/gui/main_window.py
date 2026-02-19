@@ -1117,6 +1117,7 @@ class Science2GoApp:
             ("Chunks:", "gen_chunks_var"),
             ("Voice:", "gen_voice_var"),
             ("Format:", "gen_format_var"),
+            ("Chapters:", "gen_chapters_var"),
             ("Generation Time:", "gen_time_var"),
         ]
         for row, (label, var_name) in enumerate(result_fields):
@@ -2769,6 +2770,16 @@ class Science2GoApp:
             gen_time = result.get('generation_time_seconds', 0)
             self.gen_time_var.set(f"{gen_time:.1f} seconds")
 
+            # Chapter markers (auto-detected from section headers)
+            chapter_count = result.get('chapter_count', 0)
+            chapter_markers = result.get('chapter_markers', [])
+            if chapter_count > 0:
+                self.gen_chapters_var.set(
+                    f"{chapter_count} (embedded in output file)"
+                )
+            else:
+                self.gen_chapters_var.set("None detected")
+
             self.gen_status_label.configure(text="Generation complete!")
             self.gen_progress.set(1.0)
             self.gen_progress_label.configure(
@@ -2796,6 +2807,14 @@ class Science2GoApp:
                     f"Est. TTS cost: ${tts_cost:.4f}\n"
                 )
 
+            # Build chapter summary for the dialog
+            chapter_lines = ""
+            if chapter_markers:
+                chapter_lines = f"\nChapters ({chapter_count}, auto-detected):\n"
+                for ch_title, ch_ms in chapter_markers:
+                    mins, secs = divmod(ch_ms // 1000, 60)
+                    chapter_lines += f"  {mins:02d}:{secs:02d} — {ch_title}\n"
+
             messagebox.showinfo(
                 "Generation Complete",
                 f"Audio paper generated successfully!\n\n"
@@ -2804,6 +2823,7 @@ class Science2GoApp:
                 f"Output: {Path(result.get('output_path', '')).name}\n"
                 f"Generation time: {gen_time:.1f}s\n"
                 f"{cost_lines}"
+                f"{chapter_lines}"
             )
         else:
             error = result.get('error', 'Unknown error')
