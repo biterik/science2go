@@ -34,9 +34,15 @@ except ImportError as e:
     TEMPLATE_MANAGER_AVAILABLE = False
     template_manager = None
 
+
+# Gemini 2.5 Flash pricing (per token)
+GEMINI_INPUT_PRICE = 0.30 / 1_000_000
+GEMINI_OUTPUT_PRICE = 2.50 / 1_000_000
+
+
 class ProcessingAnalytics:
     """Track processing metrics and statistics"""
-    
+
     def __init__(self):
         self.start_time = None
         self.end_time = None
@@ -48,7 +54,9 @@ class ProcessingAnalytics:
         self.retry_count = 0
         self.template_used = ""
         self.errors = []
-    
+        self.input_tokens = 0
+        self.output_tokens = 0
+
     def start_processing(self, input_text: str, template_name: str):
         """Start processing timer and record initial metrics"""
         self.start_time = time.time()
@@ -58,32 +66,41 @@ class ProcessingAnalytics:
         self.failed_chunks = 0
         self.retry_count = 0
         self.errors = []
-    
+        self.input_tokens = 0
+        self.output_tokens = 0
+
     def record_chunk_completion(self, success: bool = True):
         """Record completion of a chunk"""
         self.chunks_processed += 1
         if not success:
             self.failed_chunks += 1
-    
+
+    def record_token_usage(self, input_tokens: int, output_tokens: int):
+        """Accumulate Gemini token usage from a single API call"""
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+
     def record_retry(self):
         """Record a retry attempt"""
         self.retry_count += 1
-    
+
     def record_error(self, error_msg: str):
         """Record an error"""
         self.errors.append(error_msg)
-    
+
     def finish_processing(self, output_text: str):
         """Finish processing and calculate final metrics"""
         self.end_time = time.time()
         self.output_chars = len(output_text) if output_text else 0
-    
+
     def get_metrics(self) -> Dict[str, Any]:
         """Get all processing metrics"""
         processing_time = (self.end_time - self.start_time) if self.start_time and self.end_time else 0
         reduction_percentage = ((self.input_chars - self.output_chars) / self.input_chars * 100) if self.input_chars > 0 else 0
         success_rate = ((self.chunks_processed - self.failed_chunks) / max(self.chunks_processed, 1)) * 100
-        
+        gemini_cost = (self.input_tokens * GEMINI_INPUT_PRICE
+                       + self.output_tokens * GEMINI_OUTPUT_PRICE)
+
         return {
             'processing_time': processing_time,
             'input_chars': self.input_chars,
@@ -95,7 +112,10 @@ class ProcessingAnalytics:
             'retry_count': self.retry_count,
             'success_rate': success_rate,
             'template_used': self.template_used,
-            'errors': self.errors
+            'errors': self.errors,
+            'input_tokens': self.input_tokens,
+            'output_tokens': self.output_tokens,
+            'gemini_cost': gemini_cost,
         }
 
 class TTSOptimizer:
@@ -455,6 +475,14 @@ TEXT TO CLEAN:
         # Generate with Gemini using the user prompt as the message
         response = model_with_system.generate_content(user_prompt)
 
+        # Track token usage for cost estimation
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            um = response.usage_metadata
+            self.analytics.record_token_usage(
+                getattr(um, 'prompt_token_count', 0) or 0,
+                getattr(um, 'candidates_token_count', 0) or 0,
+            )
+
         if response and response.text:
             result = response.text.strip()
 
@@ -694,10 +722,13 @@ TEXT TO CLEAN:
         if result:
             print("✅ Advanced processing completed successfully")
             print(f"   📊 Input: {metrics['input_chars']:,} chars")
-            print(f"   📊 Output: {metrics['output_chars']:,} chars") 
+            print(f"   📊 Output: {metrics['output_chars']:,} chars")
             print(f"   📊 Reduction: {metrics['reduction_percentage']:.1f}%")
             print(f"   📊 Time: {metrics['processing_time']:.1f}s")
             print(f"   📊 Success Rate: {metrics['success_rate']:.1f}%")
+            if metrics['input_tokens'] or metrics['output_tokens']:
+                print(f"   📊 Tokens: {metrics['input_tokens']:,} in / {metrics['output_tokens']:,} out")
+                print(f"   📊 Est. Gemini cost: ${metrics['gemini_cost']:.4f}")
         
         return {
             'success': result is not None,

@@ -2055,17 +2055,31 @@ class Science2GoApp:
                 processing_time = result.get('processing_time', 0)
                 reduction = result.get('reduction_percentage', 0)
 
+                gemini_cost = result.get('gemini_cost', 0)
+                cost_str = f" | Est. cost: ${gemini_cost:.4f}" if gemini_cost else ""
                 self.processing_status_var.set(
                     f"Processed ({processing_time:.1f}s, "
-                    f"{reduction:.1f}% reduction)"
+                    f"{reduction:.1f}% reduction{cost_str})"
                 )
                 self.status_var.set("AI processing completed successfully")
+
+                # Build cost info for dialog
+                cost_lines = ""
+                input_tokens = result.get('input_tokens', 0)
+                output_tokens = result.get('output_tokens', 0)
+                if input_tokens or output_tokens:
+                    cost_lines = (
+                        f"\nGemini tokens: {input_tokens:,} in / "
+                        f"{output_tokens:,} out\n"
+                        f"Est. Gemini cost: ${gemini_cost:.4f}\n"
+                    )
 
                 messagebox.showinfo(
                     "Success",
                     f"Content processed successfully!\n\n"
                     f"Processing time: {processing_time:.1f} seconds\n"
                     f"Content reduction: {reduction:.1f}%\n"
+                    f"{cost_lines}"
                     f"You can now review and edit the processed content.\n\n"
                     f"Tip: Use 'Save Processed' to save this content for later use."
                 )
@@ -2226,15 +2240,28 @@ class Science2GoApp:
             self.update_ssml_statistics()
 
             processing_time = result.get('processing_time', 0)
+            gemini_cost = result.get('gemini_cost', 0)
+            cost_str = f" | Est. cost: ${gemini_cost:.4f}" if gemini_cost else ""
             self.ssml_status_label.configure(
-                text=f"Converted in {processing_time:.1f}s"
+                text=f"Converted in {processing_time:.1f}s{cost_str}"
             )
             self.status_var.set("SSML conversion completed successfully")
+
+            cost_lines = ""
+            input_tokens = result.get('input_tokens', 0)
+            output_tokens = result.get('output_tokens', 0)
+            if input_tokens or output_tokens:
+                cost_lines = (
+                    f"Gemini tokens: {input_tokens:,} in / "
+                    f"{output_tokens:,} out\n"
+                    f"Est. Gemini cost: ${gemini_cost:.4f}\n\n"
+                )
 
             messagebox.showinfo(
                 "SSML Conversion Complete",
                 f"Content converted to SSML successfully!\n\n"
-                f"Processing time: {processing_time:.1f} seconds\n\n"
+                f"Processing time: {processing_time:.1f} seconds\n"
+                f"{cost_lines}"
                 f"You can review and edit the SSML before generating audio.\n"
                 f"Use 'Save SSML' to save for later use."
             )
@@ -2754,10 +2781,21 @@ class Science2GoApp:
             self.open_folder_btn.configure(state="normal")
             self._last_output_path = result.get('output_path', '')
 
+            tts_cost = result.get('tts_cost', 0)
+            tts_chars = result.get('tts_characters', 0)
+            cost_str = f" | Est. TTS cost: ${tts_cost:.2f}" if tts_cost else ""
+
             self.status_var.set(
                 f"Audio generated: {result.get('duration_formatted', '')} "
-                f"({result.get('file_size_formatted', '')})"
+                f"({result.get('file_size_formatted', '')}){cost_str}"
             )
+
+            cost_lines = ""
+            if tts_chars:
+                cost_lines = (
+                    f"TTS characters: {tts_chars:,}\n"
+                    f"Est. TTS cost: ${tts_cost:.4f}\n"
+                )
 
             messagebox.showinfo(
                 "Generation Complete",
@@ -2765,7 +2803,8 @@ class Science2GoApp:
                 f"Duration: {result.get('duration_formatted', '-')}\n"
                 f"File size: {result.get('file_size_formatted', '-')}\n"
                 f"Output: {Path(result.get('output_path', '')).name}\n"
-                f"Generation time: {gen_time:.1f}s"
+                f"Generation time: {gen_time:.1f}s\n"
+                f"{cost_lines}"
             )
         else:
             error = result.get('error', 'Unknown error')

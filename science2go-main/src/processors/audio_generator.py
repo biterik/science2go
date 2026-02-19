@@ -109,6 +109,10 @@ MAX_TTS_BYTES = 4800  # Leave margin for safety
 CHIRP3_RPM_LIMIT = 200
 MIN_REQUEST_INTERVAL = 60.0 / CHIRP3_RPM_LIMIT  # 0.3s between requests
 
+# TTS pricing per character
+TTS_PRICE_CHIRP3_HD = 30.0 / 1_000_000
+TTS_PRICE_NEURAL2 = 16.0 / 1_000_000
+
 # Default voice
 DEFAULT_VOICE = "en-GB-Chirp3-HD-Charon"
 DEFAULT_LANGUAGE = "en-GB"
@@ -885,6 +889,7 @@ class AudioGenerator:
         chapter_markers = []  # (title, start_ms) for M4B chapters
         failed_chunks = 0
         current_ms = 0
+        total_billable_chars = 0
 
         for i, chunk_info in enumerate(chunks):
             chunk_text = chunk_info['text']
@@ -915,6 +920,7 @@ class AudioGenerator:
             chunk_elapsed = time.time() - chunk_start_time
 
             if audio_bytes:
+                total_billable_chars += _count_billable_chars(chunk_text)
                 logger.debug(f"Chunk {i + 1}/{total_chunks}: "
                             f"{len(audio_bytes)} audio bytes, {chunk_elapsed:.2f}s")
                 try:
@@ -1048,6 +1054,13 @@ class AudioGenerator:
         if progress_callback:
             progress_callback("Done!", 1.0)
 
+        # Calculate TTS cost based on voice model
+        if 'Neural2' in self.voice_name:
+            tts_price_per_char = TTS_PRICE_NEURAL2
+        else:
+            tts_price_per_char = TTS_PRICE_CHIRP3_HD
+        tts_cost = total_billable_chars * tts_price_per_char
+
         result = {
             'success': True,
             'output_path': str(out_path),
@@ -1062,10 +1075,13 @@ class AudioGenerator:
             'speaking_rate': self.speaking_rate,
             'audio_format': self.audio_format,
             'chapter_count': len(chapter_markers),
+            'tts_characters': total_billable_chars,
+            'tts_cost': tts_cost,
         }
 
         print(f"Audio generated: {result['duration_formatted']}, "
-              f"{result['file_size_formatted']}, {elapsed:.1f}s")
+              f"{result['file_size_formatted']}, {elapsed:.1f}s, "
+              f"{total_billable_chars:,} chars, est. TTS cost: ${tts_cost:.4f}")
         logger.info(f"Audio generated: {result['duration_formatted']}, "
                    f"{result['file_size_formatted']}, {elapsed:.1f}s, "
                    f"{total_chunks - failed_chunks}/{total_chunks} chunks OK")
@@ -1217,6 +1233,12 @@ class AudioGenerator:
 
 
 # ── Helper functions ──
+
+def _count_billable_chars(text: str) -> int:
+    """Count TTS billable characters (text only, not SSML markup tags)."""
+    text_only = re.sub(r'<[^>]+>', '', text)
+    return len(text_only.strip())
+
 
 def _bytes_to_tempfile(audio_bytes: bytes, suffix: str = ".mp3") -> str:
     """Write audio bytes to a temp file and return the path."""
