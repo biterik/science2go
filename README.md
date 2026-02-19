@@ -2,7 +2,7 @@
 
 **Turn Academic Papers into Audio Papers**
 
-Science2Go converts scientific PDF papers into high-quality audio files you can listen to on the go. The pipeline extracts text from PDFs, uses Gemini AI to clean it for spoken delivery, and synthesizes natural-sounding speech with Google Cloud Chirp 3 HD voices.
+Science2Go converts scientific PDF papers into high-quality audio files you can listen to on the go. The pipeline extracts text from PDFs, uses Gemini AI to clean it for spoken delivery, converts to SSML for fine-grained speech control, and synthesizes natural-sounding speech with Google Cloud TTS.
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -12,20 +12,19 @@ Science2Go converts scientific PDF papers into high-quality audio files you can 
 ## Pipeline Overview
 
 ```
-PDF  -->  Markdown  -->  AI Cleanup  -->  TTS  -->  MP3 / M4B
-          (marker-pdf     (Gemini 2.5     (Google Cloud TTS
-           or pdftext)      Flash)          Chirp 3 HD)
+PDF  →  Markdown  →  AI Cleanup  →  SSML  →  TTS  →  MP3 / M4B
+        (marker-pdf    (Gemini 2.5    (SSML v1.1   (Google Cloud TTS
+         or pdftext)     Flash)        markup)       Chirp 3 HD / Neural2)
 ```
 
-| Step | Component | Status |
-|------|-----------|--------|
-| 1 | PDF loading & metadata extraction | Done |
-| 2 | PDF to Markdown conversion | Done |
-| 3 | AI text cleanup for TTS | Done |
-| 4 | Save/Load processed text | Done |
-| 5 | Text-to-Speech audio generation | Done |
-| 6 | Audio post-processing & metadata | Done |
-| GUI | CustomTkinter interface (4 tabs) | Done |
+| Tab | Step | Description |
+|-----|------|-------------|
+| 1. Paper Information | PDF upload + metadata | Extract title, authors, abstract, DOI via CrossRef API. Save/load paper info as JSON. Generate audio paper description. |
+| 2. PDF to Markdown | PDF → MD conversion | Uses marker-pdf for high-quality conversion with three modes (Fast Extract, Marker no-OCR, Full Pipeline). |
+| 3. Markdown Processing | AI text cleanup | Gemini 2.5 Flash cleans text using YAML templates. Removes citations, expands abbreviations, optimizes for speech. API cost tracking. |
+| 4. MD to SSML | SSML conversion | Converts cleaned text to SSML v1.1 with paragraph/sentence structure, emphasis, prosody, and natural pacing. Built-in SSML editor with save/load. |
+| 5. Audio Config | Voice & format setup | Select voice model (Chirp 3 HD or Neural2), choose from 34 voices, adjust rate/pitch, pick output format. |
+| 6. Speech Output | TTS generation | Generate audio with progress tracking, TTS cost estimate, auto-detected chapter markers, and export to MP3/WAV/OGG/M4B. |
 
 ---
 
@@ -45,7 +44,7 @@ This is free tier and sufficient for processing papers.
 ### 2. Google Cloud (for Text-to-Speech)
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a Google Cloud account if you don't have one (free tier includes 1 million TTS characters/month for WaveNet, 4 million for standard voices; Chirp 3 HD pricing may differ -- check [Cloud TTS pricing](https://cloud.google.com/text-to-speech/pricing))
+2. Create a Google Cloud account if you don't have one (free tier includes TTS characters/month; check [Cloud TTS pricing](https://cloud.google.com/text-to-speech/pricing) for Chirp 3 HD and Neural2 rates)
 3. Create a new project (e.g., "science2go-tts")
 4. Enable the **Cloud Text-to-Speech API**:
    - Go to **APIs & Services** > **Library**
@@ -152,29 +151,52 @@ Gemini 2.5 Flash processes the extracted text through customizable YAML template
 
 The AI processing:
 - Removes citations, figure/table references, and front/back matter
+- Preserves the paper title with proper formatting (period + "Abstract." label)
 - Expands abbreviations and symbols for spoken delivery
 - Converts section headers to narrator-friendly format
-- Inserts `[pause short]` and `[pause long]` markup for Chirp 3 HD voice pacing
 - Preserves all scientific content and accuracy
+- Tracks Gemini API token usage and cost per operation
+
+### SSML Conversion
+
+The cleaned text is converted to SSML v1.1 markup for fine-grained speech control:
+
+- Paragraph (`<p>`) and sentence (`<s>`) structure for natural pacing
+- Section headers with `<prosody>` adjustments (rate, pitch)
+- `<emphasis>` for key scientific terms
+- `<say-as>` for dates, ordinals, and numbers
+- `<break>` tags for natural pauses between sections
+- Automatic SSML validation and repair before TTS
+- Built-in SSML editor with save/load/clear
 
 ### Audio Generation
 
-- **Chirp 3 HD voices**: 30 en-GB voices (16 male, 14 female), the most natural-sounding Google TTS voices
-- **Speaking rate control**: 0.25x to 2.0x (default 0.95x for comprehension)
-- **Output formats**: MP3, WAV, OGG, M4B (audiobook with chapters)
-- **Automatic text chunking**: splits text at sentence boundaries to fit the 5,000 byte API limit
-- **Chapter markers**: auto-detected from section headers, embedded as ID3 CHAP frames
-- **Audio normalization**: optional volume normalization via pydub
-- **MP3/M4B metadata**: title, author, description, genre tags via mutagen
+**Voice models:**
+
+| Model | Voices | Quality | Pricing |
+|-------|--------|---------|---------|
+| **Chirp 3 HD** | 30 en-GB (16 male, 14 female) | Most natural, recommended | $30 / 1M chars |
+| **Neural2** | 4 en-GB (1 male, 3 female) | Good quality, stricter SSML | $16 / 1M chars |
+
+**Features:**
+- Speaking rate control: 0.25x to 2.0x (default 0.95x for comprehension)
+- Output formats: MP3, WAV, OGG, M4B (audiobook)
+- Automatic SSML chunking at `</p>` boundaries (4800 byte TTS API limit)
+- **Chapter markers**: auto-detected from section headers, embedded as ID3 CHAP/CTOC tags (MP3) or text chapters (M4B). Chapter names and timestamps are displayed in the generation summary — no manual setup needed.
+- Audio normalization via pydub
+- MP3/M4B metadata: title, author, description, genre tags via mutagen
+- TTS character count and cost estimate displayed after generation
 
 ### GUI
 
-Four-tab CustomTkinter interface:
+Six-tab CustomTkinter interface:
 
-1. **Paper Setup** - PDF browse, metadata extraction (CrossRef API), PDF-to-Markdown conversion
-2. **Markdown Processing** - AI processing with template selection, save/load for source and processed text
-3. **Audio Config** - Voice selection, speaking rate, output format, bitrate, voice preview
-4. **Output Generation** - Generate button with progress tracking, results display, file open/export
+1. **Paper Information** — PDF upload, metadata extraction (CrossRef API), paper info save/load/clear (JSON), audio description generation (editable)
+2. **PDF to Markdown** — PDF path display, conversion mode selection, markdown preview
+3. **Markdown Processing** — Template selection, AI processing with progress, cost display
+4. **MD to SSML** — SSML conversion, monospace editor, save/load/clear, statistics
+5. **Audio Config** — Voice model (Chirp 3 HD / Neural2), voice selector, rate/pitch/format, preview
+6. **Speech Output** — Content source selection, generate with progress, chapter count, TTS cost, export
 
 ---
 
@@ -220,23 +242,23 @@ science2go/
   environment.yml                  # Conda environment
   requirements.txt                 # Pip dependencies
   setup.py                         # Automated setup script
-  TODO.md                          # Detailed task tracking
 
   src/
     config/
       settings.py                  # API keys, paths, audio defaults
     gui/
-      main_window.py               # Main 4-tab GUI
+      main_window.py               # Main 6-tab GUI (~2900 lines)
       platform_utils.py            # Cross-platform helpers
     processors/
       pdf_metadata.py              # PDF metadata extraction (PyPDF2 + CrossRef)
       pdf_converter.py             # PDF-to-Markdown (marker-pdf + pdftext)
-      text_processor.py            # Gemini AI text cleanup
-      audio_generator.py           # Google Cloud TTS + pydub + mutagen
+      text_processor.py            # Gemini AI text/SSML cleanup + cost tracking
+      audio_generator.py           # Google Cloud TTS + SSML chunking/validation + cost tracking
     templates/
       review_papers.yaml           # Review paper cleanup template
       technical_papers.yaml        # Technical paper cleanup template
       custom_template.yaml         # Minimal cleanup template
+      ssml_converter.yaml          # SSML conversion template
       template_manager.py          # YAML template loader
 
   output/                          # Generated content (git-ignored)
@@ -251,9 +273,11 @@ science2go/
 
 ### Voice Selection
 
-The default voice is `en-GB-Chirp3-HD-Charon` (male, British English). All 30 Chirp 3 HD en-GB voices are available in the Audio Config tab.
+Two voice models are available, selectable in the Audio Config tab:
 
-Note: Chirp 3 HD does **not** support pitch control or SSML prosody tags. Use `speaking_rate` (0.25-2.0) for pace control and inline `[pause short]` / `[pause long]` tags for pauses.
+**Chirp 3 HD** (default, recommended) — 30 en-GB voices (16 male, 14 female). Most natural sounding. Default voice: `en-GB-Chirp3-HD-Charon`.
+
+**Neural2** — 4 en-GB voices (1 male: D, 3 female: A, C, F). Stricter SSML requirements. Lower cost.
 
 ### Audio Defaults
 
@@ -292,9 +316,9 @@ If none of the Google TTS variables are set, the app checks for Application Defa
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| google-cloud-texttospeech | >=2.27.0 | TTS synthesis |
+| google-cloud-texttospeech | >=2.27.0 | TTS synthesis (Chirp 3 HD + Neural2) |
 | pydub | >=0.25.1 | Audio concatenation & normalization |
-| mutagen | >=1.47.0 | MP3/M4B metadata tagging |
+| mutagen | >=1.47.0 | MP3/M4B metadata & chapter tagging |
 | ffmpeg | (system) | Audio codec support for pydub |
 
 ### Optional (PDF-to-Markdown)
@@ -322,7 +346,7 @@ Full license: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.
 
 ## Acknowledgments
 
-- [Google Cloud Text-to-Speech](https://cloud.google.com/text-to-speech) (Chirp 3 HD voices)
+- [Google Cloud Text-to-Speech](https://cloud.google.com/text-to-speech) (Chirp 3 HD & Neural2 voices)
 - [Google Generative AI](https://ai.google.dev/) (Gemini 2.5 Flash)
 - [marker-pdf](https://github.com/VikParuchuri/marker) (PDF-to-Markdown conversion)
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (Modern GUI)
