@@ -1,8 +1,8 @@
 # Science2Go 🎙️
 
-**Transform Academic Papers into Engaging Podcasts**
+**Transform Academic Papers into Professional Audio**
 
-Science2Go is a comprehensive Python application that converts academic papers (PDF metadata + Markdown content) into high-quality podcast episodes using AI-powered text processing and professional text-to-speech technology.
+Science2Go converts scientific PDFs into high-quality audio papers using AI-powered text processing and Google Cloud Text-to-Speech. The full pipeline runs through a 6-tab GUI: PDF → Markdown → AI cleanup → SSML → TTS → MP3.
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -14,183 +14,170 @@ Science2Go is a comprehensive Python application that converts academic papers (
 
 ### 1. Clone and Setup
 ```bash
-git clone https://github.com/yourusername/science2go.git
-cd science2go
+git clone https://github.com/biterik/science2go.git
+cd science2go/science2go-main
 
-# Automated setup (handles everything)
-python setup.py
-
-# OR manual setup
+# Conda (recommended)
 conda env create -f environment.yml
 conda activate science2go
+
+# OR pip
+pip install -r requirements.txt
 ```
 
 ### 2. Configure API Keys
 
-**Option A: Shell Environment Variables (Recommended - Secure)**
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
 export GEMINI_API_KEY="your_gemini_api_key_here"
 export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-# OR alternatively:
-export GOOGLE_API_KEY="your_google_api_key_here"
 
 source ~/.zshrc  # Reload shell
 ```
 
-**Option B: Local .env File (Alternative)**
-```bash
-cp .env.template .env
-# Edit .env with your API keys (this file is git-ignored)
-```
-
-### 3. Get Your API Keys
-
 - **Gemini API Key**: [Google AI Studio](https://aistudio.google.com/app/apikey)
 - **Google Cloud TTS**: [Console Credentials](https://console.cloud.google.com/apis/credentials)
 
-### 4. Run Science2Go
+### 3. Run
 ```bash
 python main.py
 ```
 
 ---
 
-## 🎯 How It Works
+## 🎯 Pipeline
 
-### Input Process
-1. **📄 PDF Upload**: Extract paper metadata (title, authors, abstract)
-2. **📝 Markdown File**: Load your prepared content (.md/.txt file)
-3. **🤖 AI Processing**: Gemini optimizes text for audio consumption
-4. **✏️ Review & Edit**: Fine-tune the processed content
-5. **🎙️ Generate Podcast**: Custom voice TTS with chapter markers
+The application processes papers through six steps, each with its own GUI tab:
 
-### Smart Text Processing
-- ❌ Removes figure/table references  
-- 🔤 Converts equations to spoken form
-- 📚 Eliminates citation clutter
-- ✂️ Optimizes for audio flow
-- ✅ Maintains academic accuracy
+| Tab | Step | Description |
+|-----|------|-------------|
+| 1. Paper Information | PDF upload + metadata | Extract title, authors, abstract, DOI via CrossRef API. Save/load paper info as JSON. Generate audio paper description. |
+| 2. PDF to Markdown | PDF → MD conversion | Uses marker-pdf for high-quality conversion. Supports Fast Extract, Marker (no OCR), and Full Pipeline modes. |
+| 3. Markdown Processing | AI text cleanup | Gemini 2.5 Flash cleans the text using YAML templates (Review Papers, Technical Papers, Custom). Removes citations, expands abbreviations, optimizes for speech. |
+| 4. MD to SSML | SSML markup | Converts cleaned text to SSML v1.1 with paragraph/sentence structure, emphasis, prosody, and natural pacing. Built-in SSML editor with save/load. |
+| 5. Audio Config | Voice & format setup | Select voice model (Chirp 3 HD or Neural2), choose from 30+ voices, adjust rate/pitch, pick output format. |
+| 6. Speech Output | TTS generation | Generate audio with progress tracking, TTS cost estimate, and export to MP3/WAV/OGG/M4B. |
 
 ---
 
 ## 🎛️ Features
 
-### 🎙️ **Professional Audio Quality**
-- Custom Google TTS voices (e.g., `en-GB-Chirp3-HD-Algenib`)
-- Natural pacing with automatic pauses
-- Podcast-optimized encoding (44.1kHz, 128kbps MP3)
-- Chapter markers and metadata embedding
+### 🎙️ Voice Models
 
-### 🤖 **AI-Powered Processing**  
-- Google Gemini text optimization
-- Template-based prompts (Review Papers, Technical Papers, Custom)
-- Editable processed content
-- TTS-optimized output
+**Chirp 3 HD** — Most natural-sounding, recommended for audio papers
+- 16 male voices (e.g., Charon, Fenrir, Puck, Schedar)
+- 14 female voices (e.g., Achernar, Despina, Leda, Zephyr)
+- Locale: en-GB (British English)
+- Pricing: $30 per 1M characters
 
-### 🖥️ **Cross-Platform GUI**
-- Native look and feel (macOS/Windows/Linux)
-- Intuitive tabbed interface
-- Real-time progress tracking
-- Built-in audio player
+**Neural2** — Stricter SSML requirements, lighter weight
+- 1 male voice (en-GB-Neural2-D)
+- 3 female voices (en-GB-Neural2-A, C, F)
+- Locale: en-GB (British English)
+- Pricing: $16 per 1M characters
 
-### 📊 **Template System**
-- YAML-based prompt templates
-- Specialized processing for different paper types
-- Custom template creation
-- Reusable configurations
+### 🤖 AI Processing
+- **Google Gemini 2.5 Flash** (1M context, 65K output tokens)
+- Template-based prompts (YAML) for different paper types
+- Automatic chunking for large papers with overlap and intelligent merging
+- Blocked-response handling (RECITATION/SAFETY) with partial text salvage
+- API cost tracking displayed after each operation
+
+### 📝 SSML Pipeline
+- Paragraph (`<p>`) and sentence (`<s>`) structure
+- Section headers with prosody adjustments
+- `<emphasis>` for key terms, `<say-as>` for dates/numbers
+- `<break>` tags for natural pacing
+- Automatic SSML validation and repair
+- Chunking at `</p>` boundaries for TTS byte limits (4800 bytes/chunk)
+
+### 🖥️ GUI
+- CustomTkinter with 6 tabs (one per pipeline step)
+- Scrollable content areas, real-time progress tracking
+- Paper info save/load/clear (JSON format)
+- Editable text at every stage
+- Cost estimates for Gemini tokens and TTS characters
+
+### 📊 Cost Tracking
+- **Gemini**: Input/output token counts with per-operation cost ($0.30/1M input, $2.50/1M output)
+- **TTS**: Billable character count with per-operation cost (model-dependent)
+- Displayed in status bar and summary dialogs
 
 ---
 
 ## 🏗️ Project Structure
 
 ```
-science2go/
-├── main.py                     # Application entry point
-├── environment.yml             # Conda environment
-├── requirements.txt            # Pip alternative  
-├── setup.py                   # Cross-platform setup
-├── .env.template              # API key template (safe for GitHub)
+science2go-main/
+├── main.py                              # Application entry point
+├── environment.yml                      # Conda environment
+├── requirements.txt                     # Pip dependencies
+├── setup.py                             # Cross-platform setup
+├── README.md
 │
 ├── src/
-│   ├── config/settings.py     # Configuration management
-│   ├── gui/                   # Cross-platform interface
-│   ├── processors/            # PDF, AI, and audio processing
-│   ├── templates/             # YAML prompt templates
-│   └── utils/                 # Helper utilities
+│   ├── config/settings.py               # App configuration
+│   ├── gui/
+│   │   ├── main_window.py               # 6-tab GUI (~2900 lines)
+│   │   └── platform_utils.py            # Platform-specific styling
+│   ├── processors/
+│   │   ├── pdf_converter.py             # marker-pdf PDF→MD conversion
+│   │   ├── pdf_metadata.py              # PDF metadata extraction (CrossRef API)
+│   │   ├── text_processor.py            # Gemini AI text/SSML processing + cost tracking
+│   │   └── audio_generator.py           # Google Cloud TTS + SSML chunking/validation
+│   └── templates/
+│       ├── template_manager.py          # YAML template loading
+│       ├── review_papers.yaml           # Review paper cleanup template
+│       ├── technical_papers.yaml        # Technical paper template
+│       ├── custom_template.yaml         # Customizable template
+│       └── ssml_converter.yaml          # SSML conversion template
 │
-├── output/                    # Generated content (git-ignored)
-│   ├── audio/                # Podcast files
-│   ├── temp/                 # Processing temp files
-│   └── projects/             # Saved configurations
-│
-└── tests/                    # Unit tests
+└── output/                              # Generated content (git-ignored)
+    ├── audio/                           # Audio files
+    └── logs/                            # Processing logs
 ```
 
 ---
 
 ## ⚙️ Configuration
 
-Science2Go automatically detects API keys from:
-1. **Shell environment** (secure, recommended)
-2. **Local .env file** (development)  
-3. **System environment variables**
-
-### Voice Configuration
-```python
-# Use any Google TTS voice name
-voice_name = "en-GB-Chirp3-HD-Algenib"
-speaking_rate = 0.95  # Slightly slower for comprehension
-pitch = 0.0           # Neutral pitch
+### Voice Settings
+```
+Model:          Chirp 3 HD (default) or Neural2
+Default voice:  en-GB-Chirp3-HD-Charon (male)
+Speaking rate:  0.95 (slightly slower for comprehension)
+Pitch:          0.0 (neutral)
 ```
 
-### Audio Output Settings
-- **Format**: MP3 with podcast optimization
-- **Quality**: 44.1kHz, 128kbps, normalized to -23 LUFS
-- **Features**: Chapter markers, metadata, mono encoding
+### Audio Output
+- **Formats**: MP3, WAV, OGG, M4B
+- **Bitrate options**: 64k – 320k
+- **Processing**: Normalized, mono encoding
+- **Metadata**: Title, author, chapter markers (MP3/M4B)
+
+### Template System
+Templates are YAML files with `system_prompt` and `user_prompt` fields. The `{content}` placeholder is replaced with the text chunk to process. The SSML converter template also uses `{context}` for cross-chunk continuity.
 
 ---
 
 ## 🔒 Security & Privacy
 
-### GitHub Safety
-- ✅ **No API keys in repository** - uses environment variables
-- ✅ **User data git-ignored** - output files never committed  
-- ✅ **Safe configuration** - template files only
-- ✅ **Open source** - transparent and auditable
-
-### Local Security
-- API keys stored in shell environment (not in files)
-- Temporary files automatically cleaned up
-- User content stays local (never transmitted except to AI services)
+- ✅ No API keys in repository — uses environment variables
+- ✅ User data git-ignored — output files never committed
+- ✅ Content stays local (only transmitted to Google AI services)
+- ✅ Open source — transparent and auditable
 
 ---
 
-## 🛠️ Development
+## 🛠️ Dependencies
 
-### Requirements
-- Python 3.11+
-- Google Cloud TTS API access
-- Google Generative AI (Gemini) API access
-
-### Installation Methods
-```bash
-# Method 1: Conda (recommended)
-conda env create -f environment.yml
-
-# Method 2: Pip
-pip install -r requirements.txt
-
-# Method 3: Automated
-python setup.py
-```
-
-### Contributing
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+- **Python 3.11+**
+- **google-generativeai** — Gemini AI API
+- **google-cloud-texttospeech** — Google Cloud TTS
+- **marker-pdf** — PDF to Markdown conversion (requires PyTorch)
+- **customtkinter** — Modern GUI framework
+- **pydub** + **ffmpeg** — Audio processing
+- **mutagen** — MP3/M4B metadata tagging
 
 ---
 
@@ -198,9 +185,9 @@ python setup.py
 
 This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License**.
 
-- ✅ **Attribution** - Credit the original author
-- ❌ **NonCommercial** - No commercial use without permission
-- ✅ **ShareAlike** - Derivatives must use same license
+- ✅ **Attribution** — Credit the original author
+- ❌ **NonCommercial** — No commercial use without permission
+- ✅ **ShareAlike** — Derivatives must use same license
 
 **Full License**: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
@@ -208,44 +195,10 @@ For commercial licensing, please contact the author.
 
 ---
 
-## 🎯 Roadmap
-
-### v1.0 - Core Features (Current)
-- [x] Cross-platform GUI
-- [x] PDF metadata extraction
-- [x] Markdown processing
-- [x] Gemini AI integration
-- [x] Custom voice TTS
-- [x] Podcast optimization
-
-### v1.1 - Enhancements
-- [ ] Batch processing
-- [ ] Advanced audio effects
-- [ ] RSS feed generation
-- [ ] Cloud storage integration
-
-### v2.0 - Advanced Features
-- [ ] Multi-language support
-- [ ] Custom voice cloning
-- [ ] Automated chapter generation
-- [ ] Plugin system
-
----
-
 ## 🤝 Support
 
-- 📖 **Documentation**: See inline code comments and docstrings
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/science2go/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/science2go/discussions)
-- 📧 **Contact**: [Your contact information]
-
----
-
-## 🙏 Acknowledgments
-
-- Google Cloud Text-to-Speech for professional voice synthesis
-- Google Generative AI (Gemini) for intelligent text processing
-- The academic community for inspiration and feedback
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/biterik/science2go/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/biterik/science2go/discussions)
 
 ---
 
