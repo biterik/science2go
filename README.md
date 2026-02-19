@@ -7,6 +7,9 @@ Science2Go converts scientific PDF papers into high-quality audio files you can 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
+**Example public feed generated with Science2Go:**
+[Spotify](https://open.spotify.com/show/6YegWbEiVpArRZhl5HPkJW) · [Apple Podcasts](https://podcasts.apple.com/dk/podcast/materials-machine-read/id1787408682)
+
 ---
 
 ## Pipeline Overview
