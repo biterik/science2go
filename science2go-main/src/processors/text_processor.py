@@ -384,12 +384,31 @@ class AdvancedTextProcessor:
                 if best_break:
                     end = best_break
             
+            # Avoid cutting in the middle of a word at the chunk boundary,
+            # which otherwise produces broken fragments like "annu" / "lar
+            # dark-field..." at the start of the overlapping next chunk.
+            if end < len(text) and not text[end].isspace() and not text[end - 1].isspace():
+                snap = max(text.rfind(' ', start, end), text.rfind('\n', start, end))
+                if snap > start + self.min_chunk_size:
+                    end = snap
+
             chunk_text = text[start:end].strip()
             if chunk_text:
                 chunks.append((chunk_text, start, end))
-            
-            start = max(end - self.overlap_size, start + self.min_chunk_size) if end < len(text) else end
-        
+
+            if end < len(text):
+                next_start = max(end - self.overlap_size, start + self.min_chunk_size)
+                # Begin the next chunk on a word boundary so the overlapping
+                # text starts cleanly. The overlap itself is removed later when
+                # the processed chunks are merged.
+                while next_start < end and not text[next_start].isspace():
+                    next_start += 1
+                while next_start < end and text[next_start].isspace():
+                    next_start += 1
+                start = next_start
+            else:
+                start = end
+
         return chunks
     
     def process_chunk_with_retry(self, chunk_text: str, template_name: str, chunk_info: str,
@@ -572,13 +591,19 @@ TEXT TO CLEAN:
         """Merge SSML chunks by stripping <speak> wrappers and re-wrapping once.
 
         Each chunk from the AI is expected to be wrapped in <speak>...</speak>.
-        We strip those wrappers, concatenate the inner SSML content with breaks
-        between chunks, and wrap the whole thing in a single <speak> element.
+        We strip those wrappers, remove the overlapping sentences that the
+        chunker duplicated across each boundary, concatenate the inner SSML
+        content with breaks between chunks, and wrap the whole thing in a
+        single <speak> element.
+
+        Because the chunker overlaps consecutive chunks (overlap_size) to keep
+        context for Gemini, the same trailing sentences of one chunk reappear
+        at the start of the next. Without removal these are spoken twice in the
+        generated audio. We detect and strip them with fuzzy sentence matching,
+        which tolerates the small rewording Gemini applies to the overlap.
         """
         if not chunks:
             return ""
-        if len(chunks) == 1:
-            return chunks[0].strip()
 
         inner_parts = []
         for chunk in chunks:
@@ -590,10 +615,112 @@ TEXT TO CLEAN:
             if text.strip():
                 inner_parts.append(text.strip())
 
-        # Join with a break between chunks for natural pacing
-        merged_inner = '\n<break time="500ms"/>\n'.join(inner_parts)
+        if not inner_parts:
+            return ""
+        if len(inner_parts) == 1:
+            return f'<speak>\n{inner_parts[0]}\n</speak>'
 
-        return f'<speak>\n{merged_inner}\n</speak>'
+        merged = inner_parts[0]
+        removed_total = 0
+        for part in inner_parts[1:]:
+            part, removed = self._strip_leading_ssml_overlap(merged, part)
+            removed_total += removed
+            part = part.strip()
+            if part:
+                merged += '\n<break time="500ms"/>\n' + part
+
+        if removed_total:
+            print(f"   🧹 Removed {removed_total} duplicated sentence(s) at chunk boundaries")
+
+        return f'<speak>\n{merged}\n</speak>'
+
+    # --- SSML overlap-removal helpers ------------------------------------
+
+    _SENTENCE_RE = re.compile(r'<s\b[^>]*>(.*?)</s>', re.IGNORECASE | re.DOTALL)
+
+    @staticmethod
+    def _normalize_ssml_sentence(text: str) -> str:
+        """Normalize a sentence's inner SSML for fuzzy comparison.
+
+        Strips all tags (e.g. <say-as>, <emphasis>), unescapes common
+        entities, lowercases, and keeps only alphanumerics and spaces.
+        """
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = (text.replace('&quot;', '"').replace('&amp;', '&')
+                    .replace('&lt;', '<').replace('&gt;', '>').replace('&apos;', "'"))
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9 ]+', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    @staticmethod
+    def _word_jaccard(a: str, b: str) -> float:
+        """Jaccard similarity of the word sets of two normalized sentences."""
+        wa, wb = set(a.split()), set(b.split())
+        if not wa or not wb:
+            return 0.0
+        return len(wa & wb) / len(wa | wb)
+
+    def _strip_leading_ssml_overlap(self, prev: str, curr: str,
+                                    window: int = 12,
+                                    threshold: float = 0.6) -> Tuple[str, int]:
+        """Remove sentences at the start of ``curr`` that duplicate the tail of
+        ``prev`` (the overlap introduced by the chunker).
+
+        Returns (cleaned_curr, num_sentences_removed). Matching is limited to a
+        bounded window of sentences at the seam to avoid removing legitimate
+        repetition elsewhere in the document.
+        """
+        prev_sents = [self._normalize_ssml_sentence(m.group(1))
+                      for m in self._SENTENCE_RE.finditer(prev)]
+        prev_tail = [s for s in prev_sents if s][-window:]
+        if not prev_tail:
+            return curr, 0
+
+        curr_matches = list(self._SENTENCE_RE.finditer(curr))
+        if not curr_matches:
+            return curr, 0
+
+        # Find the furthest leading sentence in curr (within the window) that
+        # still matches a sentence in prev's tail. Everything up to and
+        # including it is overlap and is dropped — this also removes any broken
+        # leading fragment that sits before the last matched sentence.
+        last_dup = -1
+        limit = min(window, len(curr_matches))
+        for i in range(limit):
+            norm = self._normalize_ssml_sentence(curr_matches[i].group(1))
+            if len(norm.split()) < 4:
+                continue  # too short to judge reliably; skip as an anchor
+            best = max((self._word_jaccard(norm, p) for p in prev_tail), default=0.0)
+            if best >= threshold:
+                last_dup = i
+
+        if last_dup < 0:
+            return curr, 0
+
+        remainder = curr[curr_matches[last_dup].end():]
+        remainder = self._rebalance_leading_ssml(remainder)
+        return remainder, last_dup + 1
+
+    @staticmethod
+    def _rebalance_leading_ssml(text: str) -> str:
+        """Tidy the start of a chunk after a leading prefix was removed.
+
+        Drops orphaned closing/structural tags left dangling at the new start
+        and re-opens paragraphs if the removed prefix contained the matching
+        <p> opener, keeping the SSML reasonably balanced.
+        """
+        text = text.lstrip()
+        while True:
+            m = re.match(r'^\s*(</p>|</s>|</prosody>|<break[^>]*/>)\s*', text, re.IGNORECASE)
+            if not m:
+                break
+            text = text[m.end():]
+        opens = len(re.findall(r'<p\b[^>]*>', text, re.IGNORECASE))
+        closes = len(re.findall(r'</p>', text, re.IGNORECASE))
+        if closes > opens:
+            text = ('<p>\n' * (closes - opens)) + text
+        return text.strip()
 
     def remove_chunk_overlap(self, previous_text: str, current_text: str) -> str:
         """Conservative overlap removal to prevent content loss"""
