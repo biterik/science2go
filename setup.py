@@ -162,7 +162,7 @@ class Science2GoSetup:
             test_imports = [
                 'PyPDF2',
                 'google.cloud.texttospeech',
-                'google.generativeai',
+                'google.genai',
                 'pydub',
                 'mutagen',
                 'yaml',

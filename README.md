@@ -16,7 +16,7 @@ Science2Go converts scientific PDF papers into high-quality audio files you can 
 
 ```
 PDF  →  Markdown  →  AI Cleanup  →  SSML  →  TTS  →  MP3 / M4B
-        (marker-pdf    (Gemini 2.5    (SSML v1.1   (Google Cloud TTS
+        (marker-pdf    (Gemini        (SSML v1.1   (Google Cloud TTS
          or pdftext)     Flash)        markup)       Chirp 3 HD / Neural2)
 ```
 
@@ -24,7 +24,7 @@ PDF  →  Markdown  →  AI Cleanup  →  SSML  →  TTS  →  MP3 / M4B
 |-----|------|-------------|
 | 1. Paper Information | PDF upload + metadata | Extract title, authors, abstract, DOI via CrossRef API. Save/load paper info as JSON. Generate audio paper description. |
 | 2. PDF to Markdown | PDF → MD conversion | Uses marker-pdf for high-quality conversion with three modes (Fast Extract, Marker no-OCR, Full Pipeline). |
-| 3. Markdown Processing | AI text cleanup | Gemini 2.5 Flash cleans text using YAML templates. Removes citations, expands abbreviations, optimizes for speech. API cost tracking. |
+| 3. Markdown Processing | AI text cleanup | Gemini Flash cleans text using YAML templates. Removes citations, expands abbreviations, optimizes for speech. API cost tracking. |
 | 4. MD to SSML | SSML conversion | Converts cleaned text to SSML v1.1 with paragraph/sentence structure, emphasis, prosody, and natural pacing. Built-in SSML editor with save/load. |
 | 5. Audio Config | Voice & format setup | Select voice model (Chirp 3 HD or Neural2), choose from 34 voices, adjust rate/pitch, pick output format. |
 | 6. Speech Output | TTS generation | Generate audio with progress tracking, TTS cost estimate, auto-detected chapter markers, and export to MP3/WAV/OGG/M4B. |
@@ -33,16 +33,19 @@ PDF  →  Markdown  →  AI Cleanup  →  SSML  →  TTS  →  MP3 / M4B
 
 ## Prerequisites
 
-Before installing Science2Go, you need accounts and API keys for two Google services:
+Science2Go uses two Google services: **Gemini** (an AI model) to clean the paper text for speech, and **Cloud Text-to-Speech** to read it aloud. Gemini can be reached in two ways — pick one:
 
-### 1. Google AI Studio (for Gemini text processing)
+| Route | Billing | Setup |
+|-------|---------|-------|
+| **A. Vertex AI (recommended)** — Gemini inside your Google Cloud project | Normal Google Cloud bill, same project and login as Text-to-Speech | Enable the *Vertex AI API* in the project, set `SCIENCE2GO_VERTEX_PROJECT` (see below) |
+| **B. Gemini API key** from Google AI Studio | Separate AI Studio billing (free tier or prepaid credits) | Create a key at [AI Studio](https://aistudio.google.com/app/apikey), set `GEMINI_API_KEY` |
 
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Sign in with your Google account
-3. Click **Create API Key**
-4. Copy the key (starts with `AIza...`)
+> **Model note:** `gemini-2.5-flash` was retired on Vertex AI on 2026-10-20. With route A use `gemini-3.8-flash` (available in the `eu`, `us` and `global` locations, not in single regions like `europe-west4`). The model is configurable via `SCIENCE2GO_GEMINI_MODEL`, so future retirements only need a one-line change.
 
-This is free tier and sufficient for processing papers.
+### 1. Gemini
+
+- **Route A (Vertex AI):** after creating the Google Cloud project in step 2, open *APIs & Services → Library*, search for **Vertex AI API** and click **Enable**. Authentication uses the same `gcloud auth application-default login` as Text-to-Speech.
+- **Route B (API key):** go to [Google AI Studio](https://aistudio.google.com/app/apikey), click **Create API Key** and copy it (starts with `AIza...`). Usage is billed in AI Studio; if prepaid credits run out, calls fail with `402 RESOURCE_EXHAUSTED`.
 
 ### 2. Google Cloud (for Text-to-Speech)
 
@@ -92,26 +95,53 @@ conda activate science2go
 pip install marker-pdf pdftext
 ```
 
-### Configure API keys
+### Configure Gemini and credentials
 
-Add your keys to your shell profile (`~/.zshrc` on macOS, `~/.bashrc` on Linux):
+Settings are read from your shell environment and, as a fallback, from a `.env` file in `science2go-main/` (git-ignored, so each computer has its own). Start from the template:
 
 ```bash
-# Required: Gemini AI for text processing
-export GEMINI_API_KEY="your_gemini_api_key_here"
+cp science2go-main/.env.template science2go-main/.env
+```
 
-# For TTS (if not using gcloud auth application-default login):
+**Route A (Vertex AI)** — no secret needed, put this in `science2go-main/.env`:
+
+```bash
+SCIENCE2GO_VERTEX_PROJECT=your-gcp-project-id
+SCIENCE2GO_VERTEX_LOCATION=eu
+SCIENCE2GO_GEMINI_MODEL=gemini-3.8-flash
+```
+
+and log in once per computer (this also covers Text-to-Speech):
+
+```bash
+gcloud auth application-default login
+```
+
+**Route B (API key)** — add to your shell profile (`~/.zshrc` on macOS, `~/.bashrc` on Linux) and reload with `source ~/.zshrc`:
+
+```bash
+export GEMINI_API_KEY="your_gemini_api_key_here"
+# Text-to-Speech without gcloud login (optional):
 export GOOGLE_API_KEY="your_google_api_key_here"
 ```
 
-Then reload: `source ~/.zshrc`
+### Check the setup
+
+```bash
+cd science2go-main
+python check_voices.py
+```
+
+It reports which credentials it found, checks that all voices offered in the GUI are still available from Google, synthesises (and on macOS plays) a 3-second test sentence, and makes one tiny Gemini call. It should end with `RESULT: ALL GOOD`.
 
 ### Run
 
 ```bash
 ./run.sh
-# or: python main.py
+# or: python science2go-main/main.py  (with the science2go environment active)
 ```
+
+`run.sh` finds the `science2go` conda environment automatically (miniforge, mambaforge, miniconda, anaconda or `~/.conda`), for any user name.
 
 ---
 
@@ -295,7 +325,10 @@ Two voice models are available, selectable in the Audio Config tab:
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `GEMINI_API_KEY` | Yes | Gemini AI text processing |
+| `SCIENCE2GO_VERTEX_PROJECT` | Route A | Google Cloud project for Gemini via Vertex AI |
+| `SCIENCE2GO_VERTEX_LOCATION` | No | Vertex AI location (default `eu`; also `us`, `global`) |
+| `SCIENCE2GO_GEMINI_MODEL` | No | Gemini model (default `gemini-2.5-flash`; use `gemini-3.8-flash` on Vertex AI) |
+| `GEMINI_API_KEY` | Route B | Gemini AI text processing via AI Studio key |
 | `GOOGLE_API_KEY` | For TTS | Google Cloud TTS synthesis |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Alt. TTS | Service account JSON path |
 
@@ -310,7 +343,7 @@ If none of the Google TTS variables are set, the app checks for Application Defa
 | Package | Version | Purpose |
 |---------|---------|---------|
 | customtkinter | >=5.2.0 | Modern GUI framework |
-| google-generativeai | >=0.8.0 | Gemini AI text processing |
+| google-genai | >=1.0.0 | Gemini AI text processing |
 | PyYAML | >=6.0.1 | Template loading |
 | python-dotenv | >=1.0.0 | Environment config |
 | PyPDF2 | >=3.0.1 | PDF metadata extraction |

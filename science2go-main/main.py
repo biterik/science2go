@@ -51,9 +51,9 @@ def check_requirements():
 
     # Optional: app will start but features will be limited
     try:
-        import google.generativeai
+        from google import genai  # noqa: F401
     except ImportError:
-        missing_optional.append("google-generativeai (for AI text processing)")
+        missing_optional.append("google-genai (for AI text processing)")
 
     try:
         import google.cloud.texttospeech

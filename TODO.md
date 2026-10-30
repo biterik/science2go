@@ -108,4 +108,4 @@
 - **marker-pdf:** installed via pip (not on conda-forge), requires PyTorch
 - **CustomTkinter:** v5.2.2, installed via pip
 - **Conda env:** science2go (Python 3.11, miniforge3)
-- **Python path:** /Users/oq50iqeq/miniforge3/envs/science2go/bin/python
+- **Python path:** $HOME/miniforge3/envs/science2go/bin/python (found automatically by run.sh)

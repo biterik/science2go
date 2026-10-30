@@ -19,11 +19,23 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
-    print("⚠️ Google Generative AI not available. Install with: pip install google-generativeai")
+    print("⚠️ Google Gen AI SDK not available. Install with: pip install google-genai")
+
+try:
+    from dotenv import load_dotenv as _ld
+    _ld(Path(__file__).resolve().parents[2] / '.env')
+except ImportError:
+    pass
+
+# Model can be overridden with SCIENCE2GO_GEMINI_MODEL (e.g. in .env).
+# Note: gemini-2.5-flash was retired on Vertex AI on 2026-10-20; use
+# gemini-3.8-flash there (regions: "eu", "us" or "global").
+GEMINI_MODEL = os.getenv("SCIENCE2GO_GEMINI_MODEL", "gemini-2.5-flash")
 
 # Import template manager with error handling
 try:
@@ -36,8 +48,14 @@ except ImportError as e:
 
 
 # Gemini 2.5 Flash pricing (per token)
-GEMINI_INPUT_PRICE = 0.30 / 1_000_000
-GEMINI_OUTPUT_PRICE = 2.50 / 1_000_000
+# USD per token. gemini-2.5-flash: $0.30 / $2.50 per million tokens;
+# gemini-3.8-flash on Vertex "eu"/"us" endpoints: $0.825 / $4.125 (global: $0.75 / $3.75)
+if "3.8-flash" in os.getenv("SCIENCE2GO_GEMINI_MODEL", ""):
+    GEMINI_INPUT_PRICE = 0.825 / 1_000_000
+    GEMINI_OUTPUT_PRICE = 4.125 / 1_000_000
+else:
+    GEMINI_INPUT_PRICE = 0.30 / 1_000_000
+    GEMINI_OUTPUT_PRICE = 2.50 / 1_000_000
 
 
 class ProcessingAnalytics:
@@ -313,33 +331,54 @@ class AdvancedTextProcessor:
             return
             
         try:
-            api_key = os.getenv('GEMINI_API_KEY')
-            if not api_key:
-                print("⚠️ GEMINI_API_KEY not found in environment variables")
-                return
-                
-            genai.configure(api_key=api_key)
-            
-            generation_config = {
-                "temperature": 0.1,  # Very conservative
-                "top_p": 0.9,
-                "top_k": 40,
-                "max_output_tokens": 65536,
-                "response_mime_type": "text/plain",
-            }
-            
-            safety_settings = [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            ]
-            
-            self.model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
-                generation_config=generation_config,
-                safety_settings=safety_settings
+            # Read science2go-main/.env too (shell variables still win)
+            try:
+                from dotenv import load_dotenv
+                load_dotenv(Path(__file__).resolve().parents[2] / '.env')
+            except ImportError:
+                pass
+
+            # Two ways to reach Gemini (google-genai supports both):
+            #  1. Vertex AI in a Google Cloud project -> billed on the normal
+            #     Cloud bill, uses the same gcloud login as the TTS voices.
+            #     Enabled by SCIENCE2GO_VERTEX_PROJECT (e.g. in .env).
+            #  2. Gemini Developer API with GEMINI_API_KEY (AI Studio billing).
+            vertex_project = os.getenv('SCIENCE2GO_VERTEX_PROJECT')
+            if vertex_project:
+                location = os.getenv('SCIENCE2GO_VERTEX_LOCATION', 'eu')
+                self.client = genai.Client(vertexai=True, project=vertex_project,
+                                           location=location)
+                print(f"ℹ️  Gemini via Vertex AI (project {vertex_project}, {location})")
+            else:
+                api_key = os.getenv('GEMINI_API_KEY')
+                if not api_key:
+                    print("⚠️ Neither SCIENCE2GO_VERTEX_PROJECT nor GEMINI_API_KEY is set")
+                    return
+                self.client = genai.Client(api_key=api_key)
+                print("ℹ️  Gemini via Gemini API key (AI Studio)")
+
+            self.generation_settings = dict(
+                temperature=0.1,  # Very conservative
+                top_p=0.9,
+                top_k=40,
+                max_output_tokens=65536,
+                response_mime_type="text/plain",
+                safety_settings=[
+                    genai_types.SafetySetting(category=cat, threshold="BLOCK_NONE")
+                    for cat in (
+                        "HARM_CATEGORY_HARASSMENT",
+                        "HARM_CATEGORY_HATE_SPEECH",
+                        "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    )
+                ],
             )
+
+            # Kept for the existing "is Gemini ready?" checks (if not self.model)
+            global GEMINI_MODEL
+            GEMINI_MODEL = os.getenv("SCIENCE2GO_GEMINI_MODEL", GEMINI_MODEL)
+            self.model = GEMINI_MODEL
+            print(f"ℹ️  Gemini model: {GEMINI_MODEL}")
             
             print("✅ Gemini AI configured successfully")
             
@@ -490,16 +529,17 @@ TEXT TO CLEAN:
                 template_name, chunk_text, context=context
             )
 
-        # Create a model with the system instruction for this call
-        model_with_system = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            generation_config=self.model._generation_config,
-            safety_settings=self.model._safety_settings,
+        # Generate with Gemini: system prompt goes into the per-call config,
+        # the user prompt is the message
+        config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
+            **self.generation_settings,
         )
-
-        # Generate with Gemini using the user prompt as the message
-        response = model_with_system.generate_content(user_prompt)
+        response = self.client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=user_prompt,
+            config=config,
+        )
 
         # Track token usage for cost estimation
         if hasattr(response, 'usage_metadata') and response.usage_metadata:
@@ -512,20 +552,26 @@ TEXT TO CLEAN:
         # --- Extract text, handling blocked / empty responses ----
         result_text = None
         try:
-            if response and response.text:
-                result_text = response.text.strip()
-        except ValueError:
-            # response.text raises ValueError when no valid Part is returned
-            # (e.g. finish_reason is RECITATION or SAFETY).
+            text = response.text if response else None
+        except Exception:
+            text = None
+        if text and text.strip():
+            result_text = text.strip()
+        else:
+            # google-genai returns text=None (no exception) when no valid Part
+            # is returned (e.g. finish_reason is RECITATION or SAFETY).
             # Try to salvage partial text from candidates.
             finish_reason = "UNKNOWN"
             try:
                 candidate = response.candidates[0]
-                finish_reason = candidate.finish_reason.name
+                if candidate.finish_reason is not None:
+                    finish_reason = getattr(candidate.finish_reason, 'name',
+                                            str(candidate.finish_reason))
                 # Some blocked responses still contain partial text
                 if candidate.content and candidate.content.parts:
                     partial = "".join(
-                        p.text for p in candidate.content.parts if hasattr(p, 'text')
+                        p.text for p in candidate.content.parts
+                        if getattr(p, 'text', None) and not getattr(p, 'thought', False)
                     ).strip()
                     if len(partial) > 200:
                         result_text = partial

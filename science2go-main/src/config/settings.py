@@ -39,8 +39,8 @@ class Config:
         self.config_valid = True
 
         # Check for Gemini API key
-        if not self.gemini_api_key:
-            self.config_warnings.append("GEMINI_API_KEY not found (needed for AI text processing)")
+        if not self.gemini_api_key and not os.getenv('SCIENCE2GO_VERTEX_PROJECT'):
+            self.config_warnings.append("Neither SCIENCE2GO_VERTEX_PROJECT nor GEMINI_API_KEY set (needed for AI text processing)")
 
         # Check for Google Cloud credentials (either service account, API key, or ADC)
         has_google_auth = (

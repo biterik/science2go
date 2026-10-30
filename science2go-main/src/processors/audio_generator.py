@@ -717,7 +717,18 @@ class AudioGenerator:
             del os.environ['GOOGLE_APPLICATION_CREDENTIALS']
 
         try:
-            self.client = texttospeech.TextToSpeechClient()
+            # Prefer service-account / Application Default Credentials; if
+            # neither exists but GOOGLE_API_KEY is set, use the API key.
+            adc = os.path.join(os.path.expanduser('~'), '.config', 'gcloud',
+                               'application_default_credentials.json')
+            api_key = os.environ.get('GOOGLE_API_KEY', '')
+            if (not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+                    and not os.path.exists(adc) and api_key):
+                self.client = texttospeech.TextToSpeechClient(
+                    client_options={"api_key": api_key})
+                print("Using GOOGLE_API_KEY for Google Cloud TTS")
+            else:
+                self.client = texttospeech.TextToSpeechClient()
             self.is_ready = True
             print("Google Cloud TTS client initialized")
             logger.info("Google Cloud TTS client initialized")
