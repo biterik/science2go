@@ -87,12 +87,16 @@ Science2Go uses two Google services: **Gemini** (an AI model) to clean the paper
 git clone https://github.com/biterik/science2go.git
 cd science2go
 
-# Create conda environment (installs all dependencies)
+# Create conda environment (installs all dependencies, incl. marker-pdf
+# for PDF-to-Markdown, which pulls in PyTorch: ~2 GB, takes a while)
 conda env create -f environment.yml
 conda activate science2go
+```
 
-# Optional: enable PDF-to-Markdown conversion (pulls in PyTorch ~2GB)
-pip install marker-pdf pdftext
+To bring an existing environment up to date after a `git pull`:
+
+```bash
+conda env update -f environment.yml
 ```
 
 ### Configure Gemini and credentials
@@ -357,14 +361,14 @@ If none of the Google TTS variables are set, the app checks for Application Defa
 | mutagen | >=1.47.0 | MP3/M4B metadata & chapter tagging |
 | ffmpeg | (system) | Audio codec support for pydub |
 
-### Optional (PDF-to-Markdown)
+### PDF-to-Markdown (installed by environment.yml)
 
 | Package | Version | Purpose |
 |---------|---------|---------|
 | marker-pdf | >=1.10.0 | Full PDF conversion with layout detection |
 | pdftext | >=0.6.0 | Fast native text extraction |
 
-marker-pdf pulls in PyTorch (~2GB). If you only work with native PDFs (not scanned), `pdftext` alone is sufficient.
+marker-pdf pulls in PyTorch (~2GB). If you only work with native (not scanned) PDFs and want a smaller install, you can remove marker-pdf from `environment.yml`; `pdftext` alone covers the "Fast Extract" mode.
 
 ---
 

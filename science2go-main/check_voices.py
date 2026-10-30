@@ -3,7 +3,7 @@
 check_voices.py - verify that Science2Go can reach Google Cloud Text-to-Speech
 and that every voice offered in the GUI is still available.
 
-Run from this folder with the science2go environment's Python:
+Run with the science2go environment's Python:
     ~/miniforge3/envs/science2go/bin/python check_voices.py
 
 It (1) reports which credentials are found, (2) lists the en-GB voices Google
@@ -130,5 +130,19 @@ try:
 except Exception as e:
     ok = False
     print(f"  ERROR: {e}")
+
+print("\n== 5. PDF to Markdown (tab 2) ==")
+for mod, why in [("pdftext", "fast text extraction"), ("marker", "marker-pdf conversion")]:
+    try:
+        __import__(mod)
+        print(f"  OK: {mod} installed ({why})")
+    except Exception as e:
+        ok = False
+        print(f"  MISSING: {mod} ({why}) -> {type(e).__name__}: {str(e)[:120]}")
+import shutil
+ff = shutil.which("ffmpeg")
+print(f"  ffmpeg (audio joining): {ff or 'NOT FOUND'}")
+if not ff:
+    ok = False
 
 print("\nRESULT:", "ALL GOOD" if ok else "PROBLEMS FOUND (see above)")

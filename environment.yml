@@ -28,7 +28,6 @@ dependencies:
     - platformdirs>=4.0.0
     # Modern GUI
     - customtkinter>=5.2.0
-    # PDF to Markdown (optional - pulls in PyTorch ~2GB)
-    # Uncomment to enable:
-    # - marker-pdf>=1.10.0
-    # - pdftext>=0.6.0
+    # PDF to Markdown (tab 2) - pulls in PyTorch, ~2 GB download
+    - marker-pdf>=1.10.0
+    - pdftext>=0.6.0
